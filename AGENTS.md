@@ -15,6 +15,7 @@ A Docker-based sandbox for running `pi-coding-agent` in an isolated environment.
 - **Base:** `debian:trixie-slim`
 - **Languages:** Python 3.13 (via pyenv), Node.js 22 (via NodeSource)
 - **User:** `agent` (UID 1026, GID 1000) with passwordless sudo
+- **npm global prefix:** `/home/agent/.agent-sandbox` (global modules installed there)
 - **Entry command:** `pi` (from `@mariozechner/pi-coding-agent`)
 
 ### Build
@@ -34,6 +35,8 @@ Runs the container with bind mounts so the agent sees the host project directory
 | `$HOME/.pi` | `/home/agent/.pi` | read-write |
 | `$PWD` | `/home/agent/<relative>` | read-only (default) |
 
+`/home/agent/.agent-sandbox` is **not** mounted from the host. It is baked into the Docker image and is container-ephemeral: the agent can write to it freely during a session, but changes do not persist across container restarts.
+
 `$PWD` is remapped by replacing the `$HOME` prefix with `/home/agent`. For example, if you are in `/home/princet/my-project`, it mounts at `/home/agent/my-project`, and the agent's working directory is set there.
 
 ### Usage
@@ -51,10 +54,37 @@ Runs the container with bind mounts so the agent sees the host project directory
 ./sandbox -w -- bash
 ```
 
+## Pi Package Extensions
+
+Pi packages (npm packages with pi extensions/skills/prompts) are installed in two steps:
+
+1. **Install via npm** in the Dockerfile (step 8)
+2. **Symlink** into `/home/agent/.agent-sandbox/pi-extensions/` so pi auto-discovers them
+
+The `pi-extensions/` directory is a symlink farm — each subdirectory points to the
+package's actual location in the global `node_modules/`. Settings.json references this
+directory with an `extensions` glob, so **settings.json never needs updating when
+packages are added or removed** — just add/remove the npm install + symlink in the
+Dockerfile.
+
+Current packages:
+
+| Package | Purpose |
+|---------|--------|
+| `pi-ask-user` | Interactive `ask_user` tool with searchable selection UI |
+
+**To add a new pi package:**
+1. Add `npm install -g <package>` and a symlink line to Dockerfile step 8
+2. Add a row to the table above
+3. Rebuild the image
+
 ## Notes
 
 - The working directory mount is **read-only by default** to prevent unintended host modifications. Use `-w` only when you explicitly want the agent to write back to the host filesystem.
 - `$HOME/.pi` is always mounted read-write so the agent can persist config, history, and session state.
+- `/home/agent/.agent-sandbox` is baked into the Docker image (not a host mount). It is writable by the agent during a session but changes are **ephemeral** — they do not persist across container restarts.
+- `npm` is configured (via `NPM_CONFIG_PREFIX`) to install global packages into `/home/agent/.agent-sandbox`. This means `npm install -g` places modules in `/home/agent/.agent-sandbox/lib/node_modules/` and binaries in `/home/agent/.agent-sandbox/bin/` (which is on `PATH`).
+- Pi packages are discovered via the `/home/agent/.agent-sandbox/pi-extensions/` symlink farm and the `extensions` glob in settings.json. Do **not** add individual packages to `settings.json` — add them to the Dockerfile symlink farm instead (see "Pi Package Extensions" above).
 
 ## AGENTS.md
 

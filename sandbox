@@ -24,7 +24,7 @@ while [[ $# -gt 0 ]]; do
 done
 
 # Transform host paths to container paths:
-#   $HOME/.pi        -> /home/agent/.pi
+#   $HOME/.pi          -> /home/agent/.pi
 #   $PWD (under $HOME) -> /home/agent/<relative-path>
 CONTAINER_HOME=/home/agent
 AGENT_PWD="${PWD/#$HOME/$CONTAINER_HOME}"

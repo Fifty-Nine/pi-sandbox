@@ -61,14 +61,37 @@ RUN echo 'agent ALL=(ALL) NOPASSWD:ALL' > /etc/sudoers.d/agent \
     && chmod 440 /etc/sudoers.d/agent
 
 # -------------------------------------------------------------------
-# 6. Install pi-coding-agent globally
+# 6. Create .agent-sandbox directory for agent-owned config/state
+#     This directory is never overlaid by user mounts, and is always
+#     read-write for the agent (even in a read-only sandbox).
 # -------------------------------------------------------------------
-RUN npm install -g @mariozechner/pi-coding-agent
+RUN mkdir -p /home/agent/.agent-sandbox \
+    && chown agent:agent /home/agent/.agent-sandbox
 
 # -------------------------------------------------------------------
-# 7. Run as agent by default, entrypoint is `pi`
+# 7. Configure npm to install global modules into .agent-sandbox
+# -------------------------------------------------------------------
+ENV NPM_CONFIG_PREFIX=/home/agent/.agent-sandbox
+ENV PATH="/home/agent/.agent-sandbox/bin:${PATH}"
+
+# -------------------------------------------------------------------
+# 8. Install pi-coding-agent globally (as agent so files are owned by agent)
 # -------------------------------------------------------------------
 USER agent
+RUN npm install -g @mariozechner/pi-coding-agent pi-ask-user
+
+# -------------------------------------------------------------------
+# 9. Symlink pi packages into a single directory for auto-discovery.
+#     Adding a new package = install above + symlink here.
+#     settings.json references the glob: /home/agent/.agent-sandbox/pi-extensions/*
+# -------------------------------------------------------------------
+RUN mkdir -p /home/agent/.agent-sandbox/pi-extensions \
+ && ln -s /home/agent/.agent-sandbox/lib/node_modules/pi-ask-user \
+         /home/agent/.agent-sandbox/pi-extensions/pi-ask-user
+
+# -------------------------------------------------------------------
+# 10. Run as agent by default, entrypoint is `pi`
+# -------------------------------------------------------------------
 WORKDIR /home/agent
 
 CMD ["pi"]
