@@ -1,6 +1,20 @@
 #!/bin/bash
 set -e
 
+# Self-modification support:
+# If SANDBOX_SELF_MODIFY=1, the sandbox source is mounted at
+# /home/agent/.sandbox-source. Symlink any skills from there
+# into ~/.pi/agent/skills/ for auto-discovery.
+SANDBOX_SRC="/home/agent/.sandbox-source"
+if [[ "${SANDBOX_SELF_MODIFY:-0}" == "1" && -d "$SANDBOX_SRC/skills" ]]; then
+    SKILL_DIR="$HOME/.pi/agent/skills"
+    mkdir -p "$SKILL_DIR"
+    for skill in "$SANDBOX_SRC/skills"/*/; do
+        name=$(basename "$skill")
+        ln -sfn "$SANDBOX_SRC/skills/$name" "$SKILL_DIR/$name"
+    done
+fi
+
 # Create extension symlinks in ~/.pi/agent/extensions/ for pi auto-discovery.
 # Each subdirectory in /home/agent/.agent-sandbox/pi-extensions/ is symlinked.
 EXT_DIR="$HOME/.pi/agent/extensions"

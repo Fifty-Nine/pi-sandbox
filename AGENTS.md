@@ -8,7 +8,9 @@ A Docker-based sandbox for running `pi-coding-agent` in an isolated environment.
 |---|---|
 | `Dockerfile` | Builds the `agent-sandbox` image (Debian Trixie, pyenv/Python 3.13, Node 22, pi-coding-agent) |
 | `sandbox` | Launch script that mounts config + working directory into the container |
+| `entrypoint` | Container entrypoint: sets up extension symlinks, skill symlinks, then execs CMD |
 | `AGENTS.md` | This file |
+| `skills/self-modify-sandbox/` | Pi skill for sandbox self-modification (loaded when `--self-modify` is active) |
 
 ## Docker Image (`agent-sandbox`)
 
@@ -34,6 +36,7 @@ Runs the container with bind mounts so the agent sees the host project directory
 |---|---|---|
 | `$HOME/.pi` | `/home/agent/.pi` | read-write |
 | `$PWD` | `/home/agent/<relative>` | read-only (default) |
+| Sandbox source (if `--self-modify`) | `/home/agent/.sandbox-source` | read-write |
 
 `/home/agent/.agent-sandbox` is **not** mounted from the host. It is baked into the Docker image and is container-ephemeral: the agent can write to it freely during a session, but changes do not persist across container restarts.
 
@@ -48,6 +51,13 @@ Runs the container with bind mounts so the agent sees the host project directory
 # Read-write mount — agent can modify files in the working directory
 ./sandbox -w
 ./sandbox --read-write
+
+# Self-modify mode — mount sandbox source + load self-modify skill
+./sandbox -s
+./sandbox --self-modify
+
+# Combine flags
+./sandbox -s -w
 
 # Override the container command
 ./sandbox -- bash
@@ -86,6 +96,23 @@ Current packages:
 1. Add `npm install -g <package>` and a symlink line to Dockerfile step 8
 2. Add a row to the table above
 3. Rebuild the image
+
+## Self-Modification
+
+With `--self-modify` (or `-s`), the sandbox mounts its own source directory
+read-write at `/home/agent/.sandbox-source` and sets `SANDBOX_SELF_MODIFY=1`.
+The entrypoint script then symlinks the `self-modify-sandbox` skill from the
+mounted source into `~/.pi/agent/skills/`, making it available to the agent.
+
+The skill provides:
+- Awareness of all sandbox source files and their purposes
+- Validation scripts (`scripts/validate.sh`) to check edits before rebuild
+- Status/diff scripts to review changes
+- Instructions to notify the user that a `docker build` is needed on the host
+
+The agent **cannot rebuild the Docker image** from inside the container
+(Docker socket is not mounted for security). After making changes, the agent
+should tell the user to run `docker build -t agent-sandbox .` on the host.
 
 ## Notes
 

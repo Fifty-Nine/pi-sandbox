@@ -3,19 +3,23 @@ set -euo pipefail
 
 IMAGE=agent-sandbox
 RW=false
+SELF_MODIFY=false
 
 while [[ $# -gt 0 ]]; do
     case "$1" in
         -w|--read-write) RW=true; shift ;;
+        -s|--self-modify) SELF_MODIFY=true; shift ;;
         --) shift; break ;;
         -h|--help)
-            echo "Usage: $(basename "$0") [-w|--read-write] [--] [COMMAND...]"
+            echo "Usage: $(basename "$0") [-w|--read-write] [-s|--self-modify] [--] [COMMAND...]"
             echo ""
             echo "Launch the agent-sandbox Docker container."
             echo ""
             echo "Options:"
-            echo "  -w, --read-write  Mount the working directory read-write (default: read-only)"
-            echo "  --                End of options; remaining args override the container CMD"
+            echo "  -w, --read-write    Mount the working directory read-write (default: read-only)"
+            echo "  -s, --self-modify   Mount the sandbox source directory read-write so the agent"
+            echo "                      can modify the sandbox itself (Dockerfile, entrypoint, etc.)"
+            echo "  --                  End of options; remaining args override the container CMD"
             exit 0
             ;;
         -*) echo "Unknown option: $1" >&2; exit 1 ;;
@@ -36,9 +40,20 @@ else
     PWD_MOUNT="type=bind,source=$PWD,target=$AGENT_PWD,readonly"
 fi
 
-exec docker run -it --rm \
-    --mount "type=bind,source=$HOME/.pi,target=$CONTAINER_HOME/.pi" \
-    --mount "$PWD_MOUNT" \
-    -w "$AGENT_PWD" \
-    "$IMAGE" \
-    "$@"
+DOCKER_ARGS=(
+    --mount "type=bind,source=$HOME/.pi,target=$CONTAINER_HOME/.pi"
+    --mount "$PWD_MOUNT"
+    -w "$AGENT_PWD"
+)
+
+# Self-modify: mount the sandbox source directory read-write
+if $SELF_MODIFY; then
+    SANDBOX_SOURCE_DIR="$(cd "$(dirname "$0")" && pwd)"
+    DOCKER_ARGS+=(
+        --mount "type=bind,source=$SANDBOX_SOURCE_DIR,target=$CONTAINER_HOME/.sandbox-source"
+        --env SANDBOX_SELF_MODIFY=1
+        --env SANDBOX_SOURCE_DIR=$CONTAINER_HOME/.sandbox-source
+    )
+fi
+
+exec docker run -it --rm "${DOCKER_ARGS[@]}" "$IMAGE" "$@"
