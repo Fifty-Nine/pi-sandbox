@@ -1,0 +1,44 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+IMAGE=agent-sandbox
+RW=false
+
+while [[ $# -gt 0 ]]; do
+    case "$1" in
+        -w|--read-write) RW=true; shift ;;
+        --) shift; break ;;
+        -h|--help)
+            echo "Usage: $(basename "$0") [-w|--read-write] [--] [COMMAND...]"
+            echo ""
+            echo "Launch the agent-sandbox Docker container."
+            echo ""
+            echo "Options:"
+            echo "  -w, --read-write  Mount the working directory read-write (default: read-only)"
+            echo "  --                End of options; remaining args override the container CMD"
+            exit 0
+            ;;
+        -*) echo "Unknown option: $1" >&2; exit 1 ;;
+        *)  break ;;            # first non-flag is the start of the command
+    esac
+done
+
+# Transform host paths to container paths:
+#   $HOME/.pi        -> /home/agent/.pi
+#   $PWD (under $HOME) -> /home/agent/<relative-path>
+CONTAINER_HOME=/home/agent
+AGENT_PWD="${PWD/#$HOME/$CONTAINER_HOME}"
+
+# Mount flags for the working directory
+if $RW; then
+    PWD_MOUNT="type=bind,source=$PWD,target=$AGENT_PWD"
+else
+    PWD_MOUNT="type=bind,source=$PWD,target=$AGENT_PWD,readonly"
+fi
+
+exec docker run -it --rm \
+    --mount "type=bind,source=$HOME/.pi,target=$CONTAINER_HOME/.pi" \
+    --mount "$PWD_MOUNT" \
+    -w "$AGENT_PWD" \
+    "$IMAGE" \
+    "$@"
