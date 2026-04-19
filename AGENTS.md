@@ -56,16 +56,25 @@ Runs the container with bind mounts so the agent sees the host project directory
 
 ## Pi Package Extensions
 
-Pi packages (npm packages with pi extensions/skills/prompts) are installed in two steps:
+Pi packages (npm packages with pi extensions/skills/prompts) are installed in
+the Dockerfile and discovered at runtime via an entrypoint script:
 
 1. **Install via npm** in the Dockerfile (step 8)
-2. **Symlink** into `/home/agent/.agent-sandbox/pi-extensions/` so pi auto-discovers them
+2. **Symlink** into `/home/agent/.agent-sandbox/pi-extensions/` (Dockerfile step 8)
+3. The **entrypoint script** iterates `pi-extensions/` at startup and creates matching
+   symlinks in `~/.pi/agent/extensions/`, where pi auto-discovers them
 
 The `pi-extensions/` directory is a symlink farm — each subdirectory points to the
-package's actual location in the global `node_modules/`. Settings.json references this
-directory with an `extensions` glob, so **settings.json never needs updating when
-packages are added or removed** — just add/remove the npm install + symlink in the
-Dockerfile.
+package's actual location in the global `node_modules/`. The entrypoint bridges
+this farm into `~/.pi/agent/extensions/` (which is on the mounted `~/.pi` volume),
+so **settings.json never needs updating when packages are added or removed** —
+just add/remove the npm install + symlink in the Dockerfile.
+
+> **Why not `settings.json` `extensions` glob?** The `extensions` setting in
+> settings.json treats entries with `*` as enable/disable patterns for already-
+> discovered extensions, not as path globs for discovering new extensions. Putting
+> a glob like `/path/pi-extensions/*` in `extensions` results in no extensions being
+> loaded because there are no auto-discovered paths for the pattern to match.
 
 Current packages:
 
@@ -84,7 +93,7 @@ Current packages:
 - `$HOME/.pi` is always mounted read-write so the agent can persist config, history, and session state.
 - `/home/agent/.agent-sandbox` is baked into the Docker image (not a host mount). It is writable by the agent during a session but changes are **ephemeral** — they do not persist across container restarts.
 - `npm` is configured (via `NPM_CONFIG_PREFIX`) to install global packages into `/home/agent/.agent-sandbox`. This means `npm install -g` places modules in `/home/agent/.agent-sandbox/lib/node_modules/` and binaries in `/home/agent/.agent-sandbox/bin/` (which is on `PATH`).
-- Pi packages are discovered via the `/home/agent/.agent-sandbox/pi-extensions/` symlink farm and the `extensions` glob in settings.json. Do **not** add individual packages to `settings.json` — add them to the Dockerfile symlink farm instead (see "Pi Package Extensions" above).
+- Pi packages are discovered via symlinks in `~/.pi/agent/extensions/` created by the entrypoint script at startup. The entrypoint reads from the `pi-extensions/` symlink farm baked into the image. Do **not** add individual packages to `settings.json` — add them to the Dockerfile symlink farm instead (see "Pi Package Extensions" above).
 
 ## AGENTS.md
 

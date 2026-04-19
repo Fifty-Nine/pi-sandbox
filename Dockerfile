@@ -80,18 +80,23 @@ ENV PATH="/home/agent/.agent-sandbox/bin:${PATH}"
 USER agent
 RUN npm install -g @mariozechner/pi-coding-agent pi-ask-user
 
-# -------------------------------------------------------------------
-# 9. Symlink pi packages into a single directory for auto-discovery.
-#     Adding a new package = install above + symlink here.
-#     settings.json references the glob: /home/agent/.agent-sandbox/pi-extensions/*
-# -------------------------------------------------------------------
+# Create pi-extensions symlink farm (used by entrypoint to discover packages)
+# Adding a new package = add symlink here + update entrypoint script
 RUN mkdir -p /home/agent/.agent-sandbox/pi-extensions \
  && ln -s /home/agent/.agent-sandbox/lib/node_modules/pi-ask-user \
          /home/agent/.agent-sandbox/pi-extensions/pi-ask-user
 
 # -------------------------------------------------------------------
-# 10. Run as agent by default, entrypoint is `pi`
+# 9. Copy entrypoint script that symlinks pi packages into
+#     ~/.pi/agent/extensions/ at startup for auto-discovery.
+#     Adding a new package = install above + add to entrypoint script.
+# -------------------------------------------------------------------
+COPY --chmod=755 entrypoint /home/agent/.agent-sandbox/entrypoint
+
+# -------------------------------------------------------------------
+# 10. Run as agent by default, entrypoint sets up extensions then runs pi
 # -------------------------------------------------------------------
 WORKDIR /home/agent
 
+ENTRYPOINT ["/home/agent/.agent-sandbox/entrypoint"]
 CMD ["pi"]

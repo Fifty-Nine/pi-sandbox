@@ -1,0 +1,20 @@
+#!/bin/bash
+set -e
+
+# Create extension symlinks in ~/.pi/agent/extensions/ for pi auto-discovery.
+# Each subdirectory in /home/agent/.agent-sandbox/pi-extensions/ is symlinked.
+EXT_DIR="$HOME/.pi/agent/extensions"
+SRC_DIR="/home/agent/.agent-sandbox/pi-extensions"
+
+if [ -d "$SRC_DIR" ]; then
+    mkdir -p "$EXT_DIR"
+    for entry in "$SRC_DIR"/*; do
+        name=$(basename "$entry")
+        # Resolve to actual target (in case entry itself is a symlink)
+        resolved=$(readlink -f "$entry")
+        target="$EXT_DIR/$name"
+        ln -sfn "$resolved" "$target"
+    done
+fi
+
+exec "$@"
