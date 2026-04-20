@@ -4,14 +4,31 @@ set -euo pipefail
 IMAGE=agent-sandbox
 RW=false
 SELF_MODIFY=false
+TMUX_MODE=false
+TMUX_SOCKET=""
 
 while [[ $# -gt 0 ]]; do
     case "$1" in
         -w|--read-write) RW=true; shift ;;
         -s|--self-modify) SELF_MODIFY=true; shift ;;
+        --tmux)
+            TMUX_MODE=true
+            if [[ $# -gt 1 && ! "$2" =~ ^- ]]; then
+                TMUX_SOCKET="$2"
+                shift 2
+            else
+                # Auto-detect: extract socket path from $TMUX or use default
+                if [[ -n "${TMUX:-}" ]]; then
+                    TMUX_SOCKET="${TMUX%%,*}"
+                else
+                    TMUX_SOCKET="/tmp/tmux-$(id -u)/default"
+                fi
+                shift
+            fi
+            ;;
         --) shift; break ;;
         -h|--help)
-            echo "Usage: $(basename "$0") [-w|--read-write] [-s|--self-modify] [--] [COMMAND...]"
+            echo "Usage: $(basename "$0") [-w|--read-write] [-s|--self-modify] [--tmux [SOCKET]] [--] [COMMAND...]"
             echo ""
             echo "Launch the agent-sandbox Docker container."
             echo ""
@@ -19,6 +36,8 @@ while [[ $# -gt 0 ]]; do
             echo "  -w, --read-write    Mount the working directory read-write (default: read-only)"
             echo "  -s, --self-modify   Mount the sandbox source directory read-write so the agent"
             echo "                      can modify the sandbox itself (Dockerfile, entrypoint, etc.)"
+            echo "  --tmux [SOCKET]     Mount a tmux socket for the tmux debugging tool."
+            echo "                      SOCKET defaults to the current tmux session's socket."
             echo "  --                  End of options; remaining args override the container CMD"
             exit 0
             ;;
@@ -53,6 +72,21 @@ if $SELF_MODIFY; then
         --mount "type=bind,source=$SANDBOX_SOURCE_DIR,target=$CONTAINER_HOME/.sandbox-source"
         --env SANDBOX_SELF_MODIFY=1
         --env SANDBOX_SOURCE_DIR=$CONTAINER_HOME/.sandbox-source
+    )
+fi
+
+# Tmux debug mode: mount the tmux socket directory and set env vars
+if $TMUX_MODE; then
+    if [[ ! -S "$TMUX_SOCKET" ]]; then
+        echo "Error: tmux socket not found at $TMUX_SOCKET" >&2
+        echo "Make sure you are inside a tmux session, or provide the socket path: --tmux /path/to/socket" >&2
+        exit 1
+    fi
+    TMUX_SOCKET_DIR=$(dirname "$TMUX_SOCKET")
+    DOCKER_ARGS+=(
+        --mount "type=bind,source=$TMUX_SOCKET_DIR,target=$TMUX_SOCKET_DIR"
+        --env TMUX_SOCKET_PATH=$TMUX_SOCKET
+        --env TMUX_DEBUG_MODE=1
     )
 fi
 

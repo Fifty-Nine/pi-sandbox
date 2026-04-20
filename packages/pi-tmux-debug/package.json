@@ -1,0 +1,29 @@
+{
+  "name": "pi-tmux-debug",
+  "version": "0.1.0",
+  "description": "Tmux debugging tool for pi-coding-agent — interact with tmux sessions via capture-pane and send-keys",
+  "type": "module",
+  "keywords": [
+    "pi-package",
+    "pi",
+    "pi-coding-agent",
+    "extension",
+    "tmux",
+    "debug"
+  ],
+  "license": "MIT",
+  "pi": {
+    "extensions": ["./index.ts"],
+    "skills": ["./skills"]
+  },
+  "files": [
+    "index.ts",
+    "skills",
+    "README.md"
+  ],
+  "peerDependencies": {
+    "@mariozechner/pi-coding-agent": "*",
+    "@sinclair/typebox": "*",
+    "@mariozechner/pi-ai": "*"
+  }
+}

@@ -24,6 +24,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
         libxmlsec1-dev \
         libffi-dev \
         liblzma-dev \
+        tmux \
     && rm -rf /var/lib/apt/lists/*
 
 # -------------------------------------------------------------------
@@ -85,6 +86,14 @@ RUN npm install -g @mariozechner/pi-coding-agent pi-ask-user
 RUN mkdir -p /home/agent/.agent-sandbox/pi-extensions \
  && ln -s /home/agent/.agent-sandbox/lib/node_modules/pi-ask-user \
          /home/agent/.agent-sandbox/pi-extensions/pi-ask-user
+
+# -------------------------------------------------------------------
+# 8b. Install local pi packages
+# -------------------------------------------------------------------
+COPY --chown=agent:agent packages/pi-tmux-debug /home/agent/.agent-sandbox/pkg-src/pi-tmux-debug
+RUN npm install -g /home/agent/.agent-sandbox/pkg-src/pi-tmux-debug \
+ && ln -s /home/agent/.agent-sandbox/lib/node_modules/pi-tmux-debug \
+         /home/agent/.agent-sandbox/pi-extensions/pi-tmux-debug
 
 # -------------------------------------------------------------------
 # 9. Copy entrypoint script that symlinks pi packages into

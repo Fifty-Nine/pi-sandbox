@@ -11,6 +11,7 @@ A Docker-based sandbox for running `pi-coding-agent` in an isolated environment.
 | `entrypoint` | Container entrypoint: sets up extension symlinks, skill symlinks, then execs CMD |
 | `AGENTS.md` | This file |
 | `skills/self-modify-sandbox/` | Pi skill for sandbox self-modification (loaded when `--self-modify` is active) |
+| `packages/pi-tmux-debug/` | Local pi package providing tmux interaction tool and debugging skill |
 
 ## Docker Image (`agent-sandbox`)
 
@@ -91,11 +92,13 @@ Current packages:
 | Package | Purpose |
 |---------|--------|
 | `pi-ask-user` | Interactive `ask_user` tool with searchable selection UI |
+| `pi-tmux-debug` | Tmux interaction tool (`capture-pane`, `send-keys`, etc.) + `tmux-debug` skill |
 
 **To add a new pi package:**
-1. Add `npm install -g <package>` and a symlink line to Dockerfile step 8
-2. Add a row to the table above
-3. Rebuild the image
+1. For **npm packages**: add `npm install -g <package>` and a symlink line to Dockerfile step 8
+2. For **local packages** (in `packages/`): add COPY + `npm install -g` + symlink to Dockerfile (see step 8b)
+3. Add a row to the table above
+4. Rebuild the image
 
 ## Self-Modification
 
@@ -113,6 +116,33 @@ The skill provides:
 The agent **cannot rebuild the Docker image** from inside the container
 (Docker socket is not mounted for security). After making changes, the agent
 should tell the user to run `docker build -t agent-sandbox .` on the host.
+
+## Tmux Debug Mode
+
+With `--tmux [<socket-path>]`, the sandbox mounts a host tmux session socket
+into the container, enabling the `tmux` tool (from `pi-tmux-debug`) to interact
+with a user-provided tmux session.
+
+- If no socket path is given and `$TMUX` is set, the socket is auto-detected from `$TMUX`
+- Otherwise defaults to `/tmp/tmux-$(id -u)/default`
+- The socket directory is bind-mounted at the same path inside the container
+- `TMUX_SOCKET_PATH` env var is set so the `tmux` tool knows which socket to use
+- `TMUX_DEBUG_MODE=1` env var is set (reserved for future tool-restriction behavior)
+
+```bash
+# Auto-detect socket from current tmux session
+./sandbox --tmux
+
+# Specify socket explicitly
+./sandbox --tmux /tmp/tmux-1000/default
+
+# Combine with other flags
+./sandbox --tmux -w
+```
+
+**Note:** The container agent runs as UID 1026. If the host tmux socket is owned
+by a different UID, the agent may not have permission to connect. In that case,
+adjust the socket directory permissions on the host (e.g., `chmod 777 /tmp/tmux-$(id -u)`).
 
 ## Notes
 
