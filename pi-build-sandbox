@@ -21,7 +21,7 @@ while [[ $# -gt 0 ]]; do
         -h|--help)
             echo "Usage: $(basename "$0") [OPTIONS]"
             echo ""
-            echo "Build the pi-sandbox Docker image."
+            echo "Build the pi-sandbox Podman image."
             echo ""
             echo "The sandbox user inside the container is configurable so that"
             echo "file ownership matches the host user. By default, the current"
@@ -44,11 +44,11 @@ TAGS=("--tag=$IMAGE:latest" "--tag=$IMAGE:$SANDBOX_USER-$SANDBOX_GROUP-py$PYTHON
 
 echo "Building $IMAGE with: UID=$SANDBOX_UID GID=$SANDBOX_GID USER=$SANDBOX_USER GROUP=$SANDBOX_GROUP"
 
-docker build \
+podman build \
     --build-arg SANDBOX_UID="$SANDBOX_UID" \
     --build-arg SANDBOX_GID="$SANDBOX_GID" \
     --build-arg SANDBOX_USER="$SANDBOX_USER" \
     --build-arg SANDBOX_GROUP="$SANDBOX_GROUP" \
     --build-arg TMUX_VERSION="$TMUX_VERSION" \
     --build-arg PYTHON_VERSION="$PYTHON_VERSION" \
-    --rm "${TAGS[@]}" .
+    "${TAGS[@]}" .

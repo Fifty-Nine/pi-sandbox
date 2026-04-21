@@ -3,9 +3,9 @@ set -euo pipefail
 
 IMAGE=pi-sandbox
 
-# Detect the sandbox username from the Docker image label (set during build).
+# Detect the sandbox username from the image label (set during build).
 # Falls back to "agent" if the image doesn't exist or the label is missing.
-SANDBOX_USER=$(docker image inspect --format '{{index .Config.Labels "sandbox.user"}}' "$IMAGE" 2>/dev/null) || true
+SANDBOX_USER=$(podman image inspect --format '{{index .Labels "sandbox.user"}}' "$IMAGE" 2>/dev/null) || true
 if [[ -z "$SANDBOX_USER" || "$SANDBOX_USER" == *"<no value>"* ]]; then
     SANDBOX_USER=agent
 fi
@@ -50,7 +50,7 @@ while [[ $# -gt 0 ]]; do
         -h|--help)
             echo "Usage: $(basename "$0") [-w|--read-write] [-s|--self-modify] [--tmux [SOCKET]] [--] [COMMAND...]"
             echo ""
-            echo "Launch the pi-sandbox Docker container."
+            echo "Launch the pi-sandbox Podman container."
             echo ""
             echo "Options:"
             echo "  -w, --read-write    Mount the working directory read-write (default: read-only)"
@@ -158,4 +158,4 @@ if [[ -n "$TMUX_SSH_HOST" ]]; then
     )
 fi
 
-exec docker run -it --rm "${DOCKER_ARGS[@]}" "$IMAGE" "$@"
+exec podman run -it --rm --userns=keep-id "${DOCKER_ARGS[@]}" "$IMAGE" "$@"

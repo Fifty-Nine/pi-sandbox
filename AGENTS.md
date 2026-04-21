@@ -1,6 +1,6 @@
 # Agent Sandbox
 
-A Docker-based sandbox for running `pi-coding-agent` in an isolated environment.
+A Podman-based sandbox for running `pi-coding-agent` in an isolated environment.
 
 ## Files
 
@@ -13,7 +13,19 @@ A Docker-based sandbox for running `pi-coding-agent` in an isolated environment.
 | `skills/self-modify-sandbox/` | Pi skill for sandbox self-modification (loaded when `--self-modify` is active) |
 | `packages/pi-tmux-debug/` | Local pi package providing tmux interaction tool and debugging skill |
 
-## Docker Image (`pi-sandbox`)
+## Container Runtime
+
+The sandbox uses **rootless Podman** as its container runtime. `docker` is not required.
+Rootless Podman is used in preference to rootless Docker because Podman supports
+`--userns=keep-id`, which maps the host user's UID/GID directly into the container at
+the same numeric value. This ensures files created by the agent on bind-mounted volumes
+(e.g. `~/.pi`, `-w` CWD mounts) appear with correct ownership on the host, without
+requiring any UID/GID remapping logic in the image or entrypoint.
+
+Podman coexists cleanly with Docker — installing Podman does not affect existing Docker
+daemon, docker-compose stacks, or Docker images.
+
+## Container Image (`pi-sandbox`)
 
 - **Base:** `debian:trixie-slim`
 - **Languages:** Python 3.13 (via pyenv), Node.js 22 (via NodeSource)
@@ -23,7 +35,10 @@ A Docker-based sandbox for running `pi-coding-agent` in an isolated environment.
 
 ### Build
 
-The `pi-build-sandbox` script accepts options to customize the sandbox user to match the host user, ensuring correct file ownership for bind mounts:
+The `pi-build-sandbox` script wraps `podman build` and accepts options to customize the
+sandbox user to match the host user. With rootless Podman + `--userns=keep-id`, the baked-in
+UID/GID must match the host user running the sandbox — the default (current user) is correct
+for the common single-user case:
 
 ```bash
 # Default: use the current host user's UID, GID, username, and group name
@@ -43,13 +58,19 @@ The `pi-build-sandbox` script accepts options to customize the sandbox user to m
 | `--username` | `$(id -un)` | Username inside the container |
 | `--groupname` | `$(id -gn)` | Group name inside the container |
 
-These values are passed as Docker `--build-arg`s and baked into the image. The username is also stored as a Docker label (`sandbox.user`) so the `pi-sandbox` launch script can auto-detect it.
-
-Under the hood, `pi-build-sandbox` passes these values as Docker `--build-arg`s.
+These values are passed as `--build-arg`s and baked into the image. The username is also
+stored as an image label (`sandbox.user`) so the `pi-sandbox` launch script can auto-detect
+it via `podman image inspect`.
 
 ## Launch Script (`pi-sandbox`)
 
-Runs the container with bind mounts so the agent sees the host project directory and your pi configuration.
+Runs the container via `podman run -it --rm --userns=keep-id` with bind mounts so the agent
+sees the host project directory and your pi configuration.
+
+`--userns=keep-id` is the key flag: it tells Podman to configure the user namespace so that
+the host user's UID/GID maps to the same UID/GID inside the container, rather than to the
+default rootless mapping (where non-root container UIDs end up in the subordinate UID range
+on the host). This means bind-mounted files are always owned by the correct host user.
 
 ### Mounts
 
@@ -278,7 +299,10 @@ With `--ssh` (or `-S`), the sandbox forwards the host's SSH agent and mounts
 
 - The working directory mount is **read-only by default** to prevent unintended host modifications. Use `-w` only when you explicitly want the agent to write back to the host filesystem. Use `--no-mount` (`-x`) to skip the CWD mount entirely — the agent's working directory falls back to `/home/<username>`, which is read-write (baked into the image, not a host mount).
 - `$HOME/.pi` is always mounted read-write so the agent can persist config, history, and session state.
-- `/home/<username>/.pi-sandbox` is baked into the Docker image (not a host mount). It is writable by the agent during a session but changes are **ephemeral** — they do not persist across container restarts.
+- File ownership on bind-mounted volumes is correct because `--userns=keep-id` maps the host
+  UID/GID to the same values inside the container. This requires that the image was built with
+  the same UID/GID as the host user running the sandbox (the `pi-build-sandbox` default).
+- `/home/<username>/.pi-sandbox` is baked into the container image (not a host mount). It is writable by the agent during a session but changes are **ephemeral** — they do not persist across container restarts.
 - `npm` is configured (via `NPM_CONFIG_PREFIX`) to install global packages into `/home/<username>/.pi-sandbox`. This means `npm install -g` places modules in `/home/<username>/.pi-sandbox/lib/node_modules/` and binaries in `/home/<username>/.pi-sandbox/bin/` (which is on `PATH`).
 - Pi packages are discovered via symlinks in `~/.pi/agent/extensions/` created by the entrypoint script at startup. The entrypoint reads from the `pi-extensions/` symlink farm baked into the image. Do **not** add individual packages to `settings.json` — add them to the Dockerfile symlink farm instead (see "Pi Package Extensions" above).
 

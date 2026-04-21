@@ -87,7 +87,7 @@ RUN groupadd --gid ${SANDBOX_GID} ${SANDBOX_GROUP} \
 # -------------------------------------------------------------------
 # 5. Passwordless sudo for sandbox user
 # -------------------------------------------------------------------
-RUN echo '${SANDBOX_USER} ALL=(ALL) NOPASSWD:ALL' > /etc/sudoers.d/${SANDBOX_USER} \
+RUN echo "${SANDBOX_USER} ALL=(ALL) NOPASSWD:ALL" > /etc/sudoers.d/${SANDBOX_USER} \
     && chmod 440 /etc/sudoers.d/${SANDBOX_USER}
 
 # -------------------------------------------------------------------
