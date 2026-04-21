@@ -56,14 +56,15 @@ RUN cd /tmp \
     && rm -rf /tmp/tmux-${TMUX_VERSION}
 
 # -------------------------------------------------------------------
-# 2. pyenv + Python 3.13 (set as default)
+# 2. pyenv + Python (set as default)
 # -------------------------------------------------------------------
+ARG PYTHON_VERSION=3.13
 ENV PYENV_ROOT=/opt/pyenv
 ENV PATH="${PYENV_ROOT}/shims:${PYENV_ROOT}/bin:${PATH}"
 
 RUN git clone https://github.com/pyenv/pyenv.git "${PYENV_ROOT}" \
-    && pyenv install 3.13 \
-    && pyenv global 3.13
+    && pyenv install ${PYTHON_VERSION} \
+    && pyenv global ${PYTHON_VERSION}
 
 # -------------------------------------------------------------------
 # 3. Node.js (modern) from NodeSource

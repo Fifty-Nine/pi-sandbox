@@ -6,6 +6,8 @@ SANDBOX_UID=$(id -u)
 SANDBOX_GID=$(id -g)
 SANDBOX_USER=$(id -un)
 SANDBOX_GROUP=$(id -gn)
+TMUX_VERSION=$(tmux -V | sed -re 's/^tmux\s+//')
+PYTHON_VERSION=$(python3 --version | sed -re 's/^Python\s+//')
 
 while [[ $# -gt 0 ]]; do
     case "$1" in
@@ -13,6 +15,9 @@ while [[ $# -gt 0 ]]; do
         --gid)        SANDBOX_GID="$2"; shift 2 ;;
         --username)   SANDBOX_USER="$2"; shift 2 ;;
         --groupname)  SANDBOX_GROUP="$2"; shift 2 ;;
+        --tmux-version) TMUX_VERSION="$2"; shift 2 ;;
+        --python-version) PYTHON_VERSION="$2"; shift 2 ;;
+
         -h|--help)
             echo "Usage: $(basename "$0") [OPTIONS]"
             echo ""
@@ -35,6 +40,8 @@ while [[ $# -gt 0 ]]; do
     esac
 done
 
+TAGS=("--tag=$IMAGE:latest" "--tag=$IMAGE:$SANDBOX_USER-$SANDBOX_GROUP-py$PYTHON_VERSION-tmux$TMUX_VERSION")
+
 echo "Building $IMAGE with: UID=$SANDBOX_UID GID=$SANDBOX_GID USER=$SANDBOX_USER GROUP=$SANDBOX_GROUP"
 
 docker build \
@@ -42,4 +49,6 @@ docker build \
     --build-arg SANDBOX_GID="$SANDBOX_GID" \
     --build-arg SANDBOX_USER="$SANDBOX_USER" \
     --build-arg SANDBOX_GROUP="$SANDBOX_GROUP" \
-    --rm -t "$IMAGE" .
+    --build-arg TMUX_VERSION="$TMUX_VERSION" \
+    --build-arg PYTHON_VERSION="$PYTHON_VERSION" \
+    --rm "${TAGS[@]}" .
