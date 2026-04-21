@@ -17,14 +17,40 @@ A Docker-based sandbox for running `pi-coding-agent` in an isolated environment.
 
 - **Base:** `debian:trixie-slim`
 - **Languages:** Python 3.13 (via pyenv), Node.js 22 (via NodeSource)
-- **User:** `agent` (UID 1026, GID 1000) with passwordless sudo
-- **npm global prefix:** `/home/agent/.agent-sandbox` (global modules installed there)
+- **User:** Configurable at build time (defaults to the building user's UID/GID/name). Inside the container, the home directory is `/home/<username>/.agent-sandbox`. See **Build** below.
+- **npm global prefix:** `/home/<username>/.agent-sandbox` (global modules installed there)
 - **Entry command:** `pi` (from `@mariozechner/pi-coding-agent`)
 
 ### Build
 
+The `build` script accepts options to customize the sandbox user to match the host user, ensuring correct file ownership for bind mounts:
+
 ```bash
-docker build -t agent-sandbox .
+# Default: use the current host user's UID, GID, username, and group name
+./build
+
+# Customize the sandbox user
+./build --uid 1000 --gid 1000 --username alice --groupname alice
+
+# Show help
+./build --help
+```
+
+| Option | Default | Description |
+|--------|---------|-------------|
+| `--uid` | `$(id -u)` | User ID inside the container |
+| `--gid` | `$(id -g)` | Group ID inside the container |
+| `--username` | `$(id -un)` | Username inside the container |
+| `--groupname` | `$(id -gn)` | Group name inside the container |
+
+These values are passed as Docker `--build-arg`s and baked into the image. The username is also stored as a Docker label (`sandbox.user`) so the `sandbox` launch script can auto-detect it.
+
+You can also invoke `docker build` directly with the build args:
+
+```bash
+docker build --build-arg SANDBOX_UID=1000 --build-arg SANDBOX_GID=1000 \
+             --build-arg SANDBOX_USER=alice --build-arg SANDBOX_GROUP=alice \
+             -t agent-sandbox .
 ```
 
 ## Launch Script (`sandbox`)
@@ -35,13 +61,13 @@ Runs the container with bind mounts so the agent sees the host project directory
 
 | Host path | Container path | Mode |
 |---|---|---|
-| `$HOME/.pi` | `/home/agent/.pi` | read-write |
-| `$PWD` | `/home/agent/<relative>` | read-only (default), skipped with `--no-mount` |
-| Sandbox source (if `--self-modify`) | `/home/agent/.sandbox-source` | read-write |
+| `$HOME/.pi` | `/home/<username>/.pi` | read-write |
+| `$PWD` | `/home/<username>/<relative>` | read-only (default), skipped with `--no-mount` |
+| Sandbox source (if `--self-modify`) | `/home/<username>/.sandbox-source` | read-write |
 
-`/home/agent/.agent-sandbox` is **not** mounted from the host. It is baked into the Docker image and is container-ephemeral: the agent can write to it freely during a session, but changes do not persist across container restarts.
+`/home/<username>/.agent-sandbox` is **not** mounted from the host. It is baked into the Docker image and is container-ephemeral: the agent can write to it freely during a session, but changes do not persist across container restarts.
 
-`$PWD` is remapped by replacing the `$HOME` prefix with `/home/agent`. For example, if you are in `/home/princet/my-project`, it mounts at `/home/agent/my-project`, and the agent's working directory is set there.
+`$PWD` is remapped by replacing the `$HOME` prefix with `/home/<username>`. For example, if you are in `/home/princet/my-project` and the sandbox user is `alice`, it mounts at `/home/alice/my-project`, and the agent's working directory is set there.
 
 ### Usage
 
@@ -53,7 +79,7 @@ Runs the container with bind mounts so the agent sees the host project directory
 ./sandbox -w
 ./sandbox --read-write
 
-# No mount — skip CWD mount entirely; agent works in /home/agent (read-write)
+# No mount — skip CWD mount entirely; agent works in /home/<username> (read-write)
 ./sandbox -x
 ./sandbox --no-mount
 
@@ -76,7 +102,7 @@ Pi packages (npm packages with pi extensions/skills/prompts) are installed in
 the Dockerfile and discovered at runtime via an entrypoint script:
 
 1. **Install via npm** in the Dockerfile (step 8)
-2. **Symlink** into `/home/agent/.agent-sandbox/pi-extensions/` (Dockerfile step 8)
+2. **Symlink** into `/home/<username>/.agent-sandbox/pi-extensions/` (Dockerfile step 8)
 3. The **entrypoint script** iterates `pi-extensions/` at startup and creates matching
    symlinks in `~/.pi/agent/extensions/`, where pi auto-discovers them
 
@@ -108,7 +134,7 @@ Current packages:
 ## Self-Modification
 
 With `--self-modify` (or `-s`), the sandbox mounts its own source directory
-read-write at `/home/agent/.sandbox-source` and sets `SANDBOX_SELF_MODIFY=1`.
+read-write at `/home/<username>/.sandbox-source` and sets `SANDBOX_SELF_MODIFY=1`.
 The entrypoint script then symlinks the `self-modify-sandbox` skill from the
 mounted source into `~/.pi/agent/skills/`, making it available to the agent.
 
@@ -153,10 +179,10 @@ with a user-provided tmux session.
 
 **Important compatibility notes:**
 
-1. **UID match:** The container agent runs as UID 1026. The tmux server checks
-   the connecting client's UID and rejects mismatches. The host tmux server must
-   be running as the same UID (1026). If the socket is owned by a different UID,
-   the agent cannot connect.
+1. **UID match:** The container runs as the UID configured at build time (defaults
+   to the building user's UID). The tmux server checks the connecting client's UID
+   and rejects mismatches. The host tmux server must be running as the same UID.
+   If the socket is owned by a different UID, the agent cannot connect.
 
 2. **Tmux version:** The container builds tmux from source (currently 3.6) to
    ensure protocol compatibility with the host tmux server. Debian Trixie's
@@ -166,10 +192,10 @@ with a user-provided tmux session.
 
 ## Notes
 
-- The working directory mount is **read-only by default** to prevent unintended host modifications. Use `-w` only when you explicitly want the agent to write back to the host filesystem. Use `--no-mount` (`-x`) to skip the CWD mount entirely — the agent's working directory falls back to `/home/agent`, which is read-write (baked into the image, not a host mount).
+- The working directory mount is **read-only by default** to prevent unintended host modifications. Use `-w` only when you explicitly want the agent to write back to the host filesystem. Use `--no-mount` (`-x`) to skip the CWD mount entirely — the agent's working directory falls back to `/home/<username>`, which is read-write (baked into the image, not a host mount).
 - `$HOME/.pi` is always mounted read-write so the agent can persist config, history, and session state.
-- `/home/agent/.agent-sandbox` is baked into the Docker image (not a host mount). It is writable by the agent during a session but changes are **ephemeral** — they do not persist across container restarts.
-- `npm` is configured (via `NPM_CONFIG_PREFIX`) to install global packages into `/home/agent/.agent-sandbox`. This means `npm install -g` places modules in `/home/agent/.agent-sandbox/lib/node_modules/` and binaries in `/home/agent/.agent-sandbox/bin/` (which is on `PATH`).
+- `/home/<username>/.agent-sandbox` is baked into the Docker image (not a host mount). It is writable by the agent during a session but changes are **ephemeral** — they do not persist across container restarts.
+- `npm` is configured (via `NPM_CONFIG_PREFIX`) to install global packages into `/home/<username>/.agent-sandbox`. This means `npm install -g` places modules in `/home/<username>/.agent-sandbox/lib/node_modules/` and binaries in `/home/<username>/.agent-sandbox/bin/` (which is on `PATH`).
 - Pi packages are discovered via symlinks in `~/.pi/agent/extensions/` created by the entrypoint script at startup. The entrypoint reads from the `pi-extensions/` symlink farm baked into the image. Do **not** add individual packages to `settings.json` — add them to the Dockerfile symlink farm instead (see "Pi Package Extensions" above).
 
 ## AGENTS.md

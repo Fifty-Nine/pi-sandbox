@@ -2,6 +2,14 @@
 set -euo pipefail
 
 IMAGE=agent-sandbox
+
+# Detect the sandbox username from the Docker image label (set during build).
+# Falls back to "agent" if the image doesn't exist or the label is missing.
+SANDBOX_USER=$(docker image inspect --format '{{index .Config.Labels "sandbox.user"}}' "$IMAGE" 2>/dev/null) || true
+if [[ -z "$SANDBOX_USER" || "$SANDBOX_USER" == *"<no value>"* ]]; then
+    SANDBOX_USER=agent
+fi
+
 RW=false
 SELF_MODIFY=false
 NO_MOUNT=false
@@ -37,7 +45,7 @@ while [[ $# -gt 0 ]]; do
             echo "Options:"
             echo "  -w, --read-write    Mount the working directory read-write (default: read-only)"
             echo "  -x, --no-mount     Do not mount the working directory at all; the agent works"
-            echo "                      from /home/agent (read-write) instead"
+            echo "                      from /home/<username> (read-write) instead"
             echo "  -s, --self-modify   Mount the sandbox source directory read-write so the agent"
             echo "                      can modify the sandbox itself (Dockerfile, entrypoint, etc.)"
             echo "  --tmux [SOCKET]     Mount a tmux socket for the tmux debugging tool."
@@ -51,16 +59,16 @@ while [[ $# -gt 0 ]]; do
 done
 
 # Transform host paths to container paths:
-#   $HOME/.pi          -> /home/agent/.pi
-#   $PWD (under $HOME) -> /home/agent/<relative-path>
-CONTAINER_HOME=/home/agent
+#   $HOME/.pi          -> /home/<SANDBOX_USER>/.pi
+#   $PWD (under $HOME) -> /home/<SANDBOX_USER>/<relative-path>
+CONTAINER_HOME=/home/$SANDBOX_USER
 
 DOCKER_ARGS=(
     --mount "type=bind,source=$HOME/.pi,target=$CONTAINER_HOME/.pi"
 )
 
 if $NO_MOUNT; then
-    # No CWD mount — agent works from /home/agent (read-write by default)
+    # No CWD mount — agent works from /home/$SANDBOX_USER (read-write by default)
     AGENT_PWD=$CONTAINER_HOME
 else
     AGENT_PWD="${PWD/#$HOME/$CONTAINER_HOME}"

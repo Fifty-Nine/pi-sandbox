@@ -43,15 +43,17 @@ fi
 
 # Check for common Dockerfile issues
 if [[ -f "$SANDBOX_SRC/Dockerfile" ]]; then
-    # Check that USER agent is present before npm install
-    if grep -q "npm install -g" "$SANDBOX_SRC/Dockerfile" && ! grep -q "USER agent" "$SANDBOX_SRC/Dockerfile"; then
-        echo "WARNING: npm install -g found but no USER agent directive (may install as root)"
+    # Check that USER directive is present before npm install
+    if grep -q "npm install -g" "$SANDBOX_SRC/Dockerfile" && ! grep -qE 'USER (agent|\$\{SANDBOX_USER\})' "$SANDBOX_SRC/Dockerfile"; then
+        echo "WARNING: npm install -g found but no USER directive (may install as root)"
     fi
 fi
 
-# Check entrypoint is executable
+# Check entrypoint is executable (or will be via COPY --chmod=755)
 if [[ -f "$SANDBOX_SRC/entrypoint" ]] && [[ ! -x "$SANDBOX_SRC/entrypoint" ]]; then
-    echo "WARNING: entrypoint is not executable"
+    if ! grep -q "COPY --chmod=755 entrypoint" "$SANDBOX_SRC/Dockerfile" 2>/dev/null; then
+        echo "WARNING: entrypoint is not executable and Dockerfile doesn't set --chmod=755 on COPY"
+    fi
 fi
 
 # Check sandbox script is executable
@@ -63,7 +65,7 @@ if [[ $errors -eq 0 ]]; then
     echo "✓ All validation checks passed"
     echo ""
     echo "Remember: changes require a Docker image rebuild on the host:"
-    echo "  cd $SANDBOX_SRC && docker build -t agent-sandbox ."
+    echo "  cd $SANDBOX_SRC && ./build"
 else
     echo "✗ $errors error(s) found"
     exit 1

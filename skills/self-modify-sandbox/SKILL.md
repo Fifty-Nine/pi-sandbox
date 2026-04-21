@@ -14,14 +14,14 @@ This skill is only available when the sandbox was launched with `--self-modify`.
 
 ```bash
 echo $SANDBOX_SELF_MODIFY  # should be "1"
-ls /home/agent/.sandbox-source/Dockerfile  # should exist
+ls $HOME/.sandbox-source/Dockerfile  # should exist
 ```
 
 If these aren't set, the user must relaunch with `./sandbox --self-modify`.
 
 ## Sandbox Source Location
 
-All sandbox source files are at `/home/agent/.sandbox-source/`:
+All sandbox source files are at `$HOME/.sandbox-source/`:
 
 | File | Purpose |
 |------|---------|
@@ -37,7 +37,7 @@ Changes you make here persist on the host filesystem (the directory is a bind mo
 
 ### 1. Edit the relevant file
 
-Use `edit` or `write` on files under `/home/agent/.sandbox-source/`.
+Use `edit` or `write` on files under `$HOME/.sandbox-source/`.
 
 **Dockerfile** — Add packages, change base image, add build steps:
 ```bash
@@ -62,7 +62,7 @@ Use `edit` or `write` on files under `/home/agent/.sandbox-source/`.
 To add a new npm pi package:
 
 1. Add `npm install -g <package>` to Dockerfile step 8
-2. Add a symlink in Dockerfile step 8: `&& ln -s /home/agent/.agent-sandbox/lib/node_modules/<package> /home/agent/.agent-sandbox/pi-extensions/<package>`
+2. Add a symlink in Dockerfile step 8: `&& ln -s $HOME/.agent-sandbox/lib/node_modules/<package> $HOME/.agent-sandbox/pi-extensions/<package>`
 3. Update the "Current packages" table in AGENTS.md
 4. Rebuild the image (user does this on the host)
 
@@ -71,7 +71,7 @@ To add a new npm pi package:
 Before telling the user to rebuild, validate your changes:
 
 ```bash
-/home/agent/.sandbox-source/skills/self-modify-sandbox/scripts/validate.sh
+$HOME/.sandbox-source/skills/self-modify-sandbox/scripts/validate.sh
 ```
 
 This checks:
@@ -94,7 +94,7 @@ After making changes, inform the user:
 ## Important Constraints
 
 - **You cannot rebuild the image from inside the container.** The Docker socket is not mounted (by design, for security). Changes take effect on the *next* container session after the user rebuilds.
-- **Do not modify `/home/agent/.agent-sandbox/`** — that's the ephemeral in-image directory. Changes there are lost on rebuild. Always edit `/home/agent/.sandbox-source/` instead.
+- **Do not modify `$HOME/.agent-sandbox/`** — that's the ephemeral in-image directory. Changes there are lost on rebuild. Always edit `$HOME/.sandbox-source/` instead.
 - **Keep AGENTS.md updated** — After making structural changes, update AGENTS.md so future agents understand the new state.
 - **Test the Dockerfile carefully** — A broken Dockerfile means the sandbox can't start. Use `validate.sh` before handing off.
 

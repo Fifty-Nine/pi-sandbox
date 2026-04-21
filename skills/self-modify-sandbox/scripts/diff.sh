@@ -1,7 +1,7 @@
 #!/bin/bash
 # Show changes to sandbox source files vs the git HEAD.
 set -e
-cd /home/agent/.sandbox-source
+cd $HOME/.sandbox-source
 if [[ -d .git ]]; then
     git diff --stat HEAD
     echo ""

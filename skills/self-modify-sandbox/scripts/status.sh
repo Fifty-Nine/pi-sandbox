@@ -1,7 +1,7 @@
 #!/bin/bash
 # Show the current sandbox configuration and environment.
 set -e
-SANDBOX_SRC="/home/agent/.sandbox-source"
+SANDBOX_SRC="$HOME/.sandbox-source"
 
 echo "=== Sandbox Self-Modify Status ==="
 echo ""

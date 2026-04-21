@@ -4,6 +4,17 @@ FROM debian:trixie-slim
 ENV DEBIAN_FRONTEND=noninteractive
 
 # -------------------------------------------------------------------
+# Build arguments: customizable sandbox user (defaults match old behavior)
+# -------------------------------------------------------------------
+ARG SANDBOX_UID=1026
+ARG SANDBOX_GID=1000
+ARG SANDBOX_USER=agent
+ARG SANDBOX_GROUP=agent
+
+# Expose the username as a Docker label so the launch script can detect it
+LABEL sandbox.user=${SANDBOX_USER}
+
+# -------------------------------------------------------------------
 # 1. Base packages + sudo (needed for passwordless sudo later)
 # -------------------------------------------------------------------
 RUN find /etc/apt/sources.list.d -type f -exec sed -i 's/Types: deb$/Types: deb deb-src/' {} +
@@ -61,67 +72,67 @@ RUN curl -fsSL https://deb.nodesource.com/setup_22.x | bash - \
     && rm -rf /var/lib/apt/lists/*
 
 # -------------------------------------------------------------------
-# 4. Create group `agent` (GID 1000) and user `agent` (UID 1026)
+# 4. Create sandbox user and group (configurable via build args)
 # -------------------------------------------------------------------
-RUN groupadd --gid 1000 agent \
+RUN groupadd --gid ${SANDBOX_GID} ${SANDBOX_GROUP} \
     && useradd \
-        --uid 1026 \
-        --gid agent \
+        --uid ${SANDBOX_UID} \
+        --gid ${SANDBOX_GROUP} \
         --create-home \
         --shell /bin/bash \
-        agent
+        ${SANDBOX_USER}
 
 # -------------------------------------------------------------------
-# 5. Passwordless sudo for agent
+# 5. Passwordless sudo for sandbox user
 # -------------------------------------------------------------------
-RUN echo 'agent ALL=(ALL) NOPASSWD:ALL' > /etc/sudoers.d/agent \
-    && chmod 440 /etc/sudoers.d/agent
+RUN echo '${SANDBOX_USER} ALL=(ALL) NOPASSWD:ALL' > /etc/sudoers.d/${SANDBOX_USER} \
+    && chmod 440 /etc/sudoers.d/${SANDBOX_USER}
 
 # -------------------------------------------------------------------
-# 6. Create .agent-sandbox directory for agent-owned config/state
+# 6. Create .agent-sandbox directory for sandbox-user-owned config/state
 #     This directory is never overlaid by user mounts, and is always
-#     read-write for the agent (even in a read-only sandbox).
+#     read-write for the sandbox user (even in a read-only sandbox).
 # -------------------------------------------------------------------
-RUN mkdir -p /home/agent/.agent-sandbox \
-    && chown agent:agent /home/agent/.agent-sandbox
+RUN mkdir -p /home/${SANDBOX_USER}/.agent-sandbox \
+    && chown ${SANDBOX_USER}:${SANDBOX_GROUP} /home/${SANDBOX_USER}/.agent-sandbox
 
 # -------------------------------------------------------------------
 # 7. Configure npm to install global modules into .agent-sandbox
 # -------------------------------------------------------------------
-ENV NPM_CONFIG_PREFIX=/home/agent/.agent-sandbox
-ENV PATH="/home/agent/.agent-sandbox/bin:${PATH}"
+ENV NPM_CONFIG_PREFIX=/home/${SANDBOX_USER}/.agent-sandbox
+ENV PATH="/home/${SANDBOX_USER}/.agent-sandbox/bin:${PATH}"
 
 # -------------------------------------------------------------------
-# 8. Install pi-coding-agent globally (as agent so files are owned by agent)
+# 8. Install pi-coding-agent globally (as sandbox user so files are owned by them)
 # -------------------------------------------------------------------
-USER agent
+USER ${SANDBOX_USER}
 RUN npm install -g @mariozechner/pi-coding-agent pi-ask-user
 
 # Create pi-extensions symlink farm (used by entrypoint to discover packages)
 # Adding a new package = add symlink here + update entrypoint script
-RUN mkdir -p /home/agent/.agent-sandbox/pi-extensions \
- && ln -s /home/agent/.agent-sandbox/lib/node_modules/pi-ask-user \
-         /home/agent/.agent-sandbox/pi-extensions/pi-ask-user
+RUN mkdir -p /home/${SANDBOX_USER}/.agent-sandbox/pi-extensions \
+ && ln -s /home/${SANDBOX_USER}/.agent-sandbox/lib/node_modules/pi-ask-user \
+         /home/${SANDBOX_USER}/.agent-sandbox/pi-extensions/pi-ask-user
 
 # -------------------------------------------------------------------
 # 8b. Install local pi packages
 # -------------------------------------------------------------------
-COPY --chown=agent:agent packages/pi-tmux-debug /home/agent/.agent-sandbox/pkg-src/pi-tmux-debug
-RUN npm install -g /home/agent/.agent-sandbox/pkg-src/pi-tmux-debug \
- && ln -s /home/agent/.agent-sandbox/lib/node_modules/pi-tmux-debug \
-         /home/agent/.agent-sandbox/pi-extensions/pi-tmux-debug
+COPY --chown=${SANDBOX_USER}:${SANDBOX_GROUP} packages/pi-tmux-debug /home/${SANDBOX_USER}/.agent-sandbox/pkg-src/pi-tmux-debug
+RUN npm install -g /home/${SANDBOX_USER}/.agent-sandbox/pkg-src/pi-tmux-debug \
+ && ln -s /home/${SANDBOX_USER}/.agent-sandbox/lib/node_modules/pi-tmux-debug \
+         /home/${SANDBOX_USER}/.agent-sandbox/pi-extensions/pi-tmux-debug
 
 # -------------------------------------------------------------------
 # 9. Copy entrypoint script that symlinks pi packages into
 #     ~/.pi/agent/extensions/ at startup for auto-discovery.
 #     Adding a new package = install above + add to entrypoint script.
 # -------------------------------------------------------------------
-COPY --chmod=755 entrypoint /home/agent/.agent-sandbox/entrypoint
+COPY --chmod=755 entrypoint /usr/local/bin/sandbox-entrypoint
 
 # -------------------------------------------------------------------
-# 10. Run as agent by default, entrypoint sets up extensions then runs pi
+# 10. Run as sandbox user by default, entrypoint sets up extensions then runs pi
 # -------------------------------------------------------------------
-WORKDIR /home/agent
+WORKDIR /home/${SANDBOX_USER}
 
-ENTRYPOINT ["/home/agent/.agent-sandbox/entrypoint"]
+ENTRYPOINT ["/usr/local/bin/sandbox-entrypoint"]
 CMD ["pi"]

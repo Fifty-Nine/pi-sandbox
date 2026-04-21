@@ -1,3 +1,45 @@
-#!/bin/bash
+#!/usr/bin/env bash
+set -euo pipefail
 
-docker build --rm -t agent-sandbox .
+IMAGE=agent-sandbox
+SANDBOX_UID=$(id -u)
+SANDBOX_GID=$(id -g)
+SANDBOX_USER=$(id -un)
+SANDBOX_GROUP=$(id -gn)
+
+while [[ $# -gt 0 ]]; do
+    case "$1" in
+        --uid)        SANDBOX_UID="$2"; shift 2 ;;
+        --gid)        SANDBOX_GID="$2"; shift 2 ;;
+        --username)   SANDBOX_USER="$2"; shift 2 ;;
+        --groupname)  SANDBOX_GROUP="$2"; shift 2 ;;
+        -h|--help)
+            echo "Usage: $(basename "$0") [OPTIONS]"
+            echo ""
+            echo "Build the agent-sandbox Docker image."
+            echo ""
+            echo "The sandbox user inside the container is configurable so that"
+            echo "file ownership matches the host user. By default, the current"
+            echo "host user's UID, GID, username, and group name are used."
+            echo ""
+            echo "Options:"
+            echo "  --uid UID          User ID for the sandbox user (default: $(id -u))"
+            echo "  --gid GID          Group ID for the sandbox user (default: $(id -g))"
+            echo "  --username NAME    Username for the sandbox user (default: $(id -un))"
+            echo "  --groupname NAME   Group name for the sandbox user (default: $(id -gn))"
+            echo "  -h, --help         Show this help message"
+            exit 0
+            ;;
+        -*) echo "Unknown option: $1" >&2; exit 1 ;;
+        *)  shift ;;
+    esac
+done
+
+echo "Building $IMAGE with: UID=$SANDBOX_UID GID=$SANDBOX_GID USER=$SANDBOX_USER GROUP=$SANDBOX_GROUP"
+
+docker build \
+    --build-arg SANDBOX_UID="$SANDBOX_UID" \
+    --build-arg SANDBOX_GID="$SANDBOX_GID" \
+    --build-arg SANDBOX_USER="$SANDBOX_USER" \
+    --build-arg SANDBOX_GROUP="$SANDBOX_GROUP" \
+    --rm -t "$IMAGE" .
