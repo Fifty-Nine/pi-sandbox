@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-IMAGE=agent-sandbox
+IMAGE=pi-sandbox
 SANDBOX_UID=$(id -u)
 SANDBOX_GID=$(id -g)
 SANDBOX_USER=$(id -un)
@@ -16,7 +16,7 @@ while [[ $# -gt 0 ]]; do
         -h|--help)
             echo "Usage: $(basename "$0") [OPTIONS]"
             echo ""
-            echo "Build the agent-sandbox Docker image."
+            echo "Build the pi-sandbox Docker image."
             echo ""
             echo "The sandbox user inside the container is configurable so that"
             echo "file ownership matches the host user. By default, the current"

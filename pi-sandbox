@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-IMAGE=agent-sandbox
+IMAGE=pi-sandbox
 
 # Detect the sandbox username from the Docker image label (set during build).
 # Falls back to "agent" if the image doesn't exist or the label is missing.
@@ -50,7 +50,7 @@ while [[ $# -gt 0 ]]; do
         -h|--help)
             echo "Usage: $(basename "$0") [-w|--read-write] [-s|--self-modify] [--tmux [SOCKET]] [--] [COMMAND...]"
             echo ""
-            echo "Launch the agent-sandbox Docker container."
+            echo "Launch the pi-sandbox Docker container."
             echo ""
             echo "Options:"
             echo "  -w, --read-write    Mount the working directory read-write (default: read-only)"

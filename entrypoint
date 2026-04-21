@@ -16,9 +16,9 @@ if [[ "${SANDBOX_SELF_MODIFY:-0}" == "1" && -d "$SANDBOX_SRC/skills" ]]; then
 fi
 
 # Create extension symlinks in ~/.pi/agent/extensions/ for pi auto-discovery.
-# Each subdirectory in $HOME/.agent-sandbox/pi-extensions/ is symlinked.
+# Each subdirectory in $HOME/.pi-sandbox/pi-extensions/ is symlinked.
 EXT_DIR="$HOME/.pi/agent/extensions"
-SRC_DIR="$HOME/.agent-sandbox/pi-extensions"
+SRC_DIR="$HOME/.pi-sandbox/pi-extensions"
 
 if [ -d "$SRC_DIR" ]; then
     mkdir -p "$EXT_DIR"

@@ -90,18 +90,18 @@ RUN echo '${SANDBOX_USER} ALL=(ALL) NOPASSWD:ALL' > /etc/sudoers.d/${SANDBOX_USE
     && chmod 440 /etc/sudoers.d/${SANDBOX_USER}
 
 # -------------------------------------------------------------------
-# 6. Create .agent-sandbox directory for sandbox-user-owned config/state
+# 6. Create .pi-sandbox directory for sandbox-user-owned config/state
 #     This directory is never overlaid by user mounts, and is always
 #     read-write for the sandbox user (even in a read-only sandbox).
 # -------------------------------------------------------------------
-RUN mkdir -p /home/${SANDBOX_USER}/.agent-sandbox \
-    && chown ${SANDBOX_USER}:${SANDBOX_GROUP} /home/${SANDBOX_USER}/.agent-sandbox
+RUN mkdir -p /home/${SANDBOX_USER}/.pi-sandbox \
+    && chown ${SANDBOX_USER}:${SANDBOX_GROUP} /home/${SANDBOX_USER}/.pi-sandbox
 
 # -------------------------------------------------------------------
-# 7. Configure npm to install global modules into .agent-sandbox
+# 7. Configure npm to install global modules into .pi-sandbox
 # -------------------------------------------------------------------
-ENV NPM_CONFIG_PREFIX=/home/${SANDBOX_USER}/.agent-sandbox
-ENV PATH="/home/${SANDBOX_USER}/.agent-sandbox/bin:${PATH}"
+ENV NPM_CONFIG_PREFIX=/home/${SANDBOX_USER}/.pi-sandbox
+ENV PATH="/home/${SANDBOX_USER}/.pi-sandbox/bin:${PATH}"
 
 # -------------------------------------------------------------------
 # 8. Install pi-coding-agent globally (as sandbox user so files are owned by them)
@@ -111,17 +111,17 @@ RUN npm install -g @mariozechner/pi-coding-agent pi-ask-user
 
 # Create pi-extensions symlink farm (used by entrypoint to discover packages)
 # Adding a new package = add symlink here + update entrypoint script
-RUN mkdir -p /home/${SANDBOX_USER}/.agent-sandbox/pi-extensions \
- && ln -s /home/${SANDBOX_USER}/.agent-sandbox/lib/node_modules/pi-ask-user \
-         /home/${SANDBOX_USER}/.agent-sandbox/pi-extensions/pi-ask-user
+RUN mkdir -p /home/${SANDBOX_USER}/.pi-sandbox/pi-extensions \
+ && ln -s /home/${SANDBOX_USER}/.pi-sandbox/lib/node_modules/pi-ask-user \
+         /home/${SANDBOX_USER}/.pi-sandbox/pi-extensions/pi-ask-user
 
 # -------------------------------------------------------------------
 # 8b. Install local pi packages
 # -------------------------------------------------------------------
-COPY --chown=${SANDBOX_USER}:${SANDBOX_GROUP} packages/pi-tmux-debug /home/${SANDBOX_USER}/.agent-sandbox/pkg-src/pi-tmux-debug
-RUN npm install -g /home/${SANDBOX_USER}/.agent-sandbox/pkg-src/pi-tmux-debug \
- && ln -s /home/${SANDBOX_USER}/.agent-sandbox/lib/node_modules/pi-tmux-debug \
-         /home/${SANDBOX_USER}/.agent-sandbox/pi-extensions/pi-tmux-debug
+COPY --chown=${SANDBOX_USER}:${SANDBOX_GROUP} packages/pi-tmux-debug /home/${SANDBOX_USER}/.pi-sandbox/pkg-src/pi-tmux-debug
+RUN npm install -g /home/${SANDBOX_USER}/.pi-sandbox/pkg-src/pi-tmux-debug \
+ && ln -s /home/${SANDBOX_USER}/.pi-sandbox/lib/node_modules/pi-tmux-debug \
+         /home/${SANDBOX_USER}/.pi-sandbox/pi-extensions/pi-tmux-debug
 
 # -------------------------------------------------------------------
 # 9. Copy entrypoint script that symlinks pi packages into

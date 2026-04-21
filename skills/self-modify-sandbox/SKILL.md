@@ -1,12 +1,12 @@
 ---
 name: self-modify-sandbox
-description: Modify the agent-sandbox Docker environment (Dockerfile, entrypoint, launch script, AGENTS.md). Use when the user asks to change sandbox configuration, add/remove packages, update the Docker image definition, or modify sandbox behavior.
+description: Modify the pi-sandbox Docker environment (Dockerfile, entrypoint, launch script, AGENTS.md). Use when the user asks to change sandbox configuration, add/remove packages, update the Docker image definition, or modify sandbox behavior.
 compatibility: Requires --self-modify flag on sandbox launch script
 ---
 
 # Self-Modify Sandbox
 
-This skill lets you modify the agent-sandbox environment from *inside* the running container.
+This skill lets you modify the pi-sandbox environment from *inside* the running container.
 
 ## Prerequisites
 
@@ -62,7 +62,7 @@ Use `edit` or `write` on files under `$HOME/.sandbox-source/`.
 To add a new npm pi package:
 
 1. Add `npm install -g <package>` to Dockerfile step 8
-2. Add a symlink in Dockerfile step 8: `&& ln -s $HOME/.agent-sandbox/lib/node_modules/<package> $HOME/.agent-sandbox/pi-extensions/<package>`
+2. Add a symlink in Dockerfile step 8: `&& ln -s $HOME/.pi-sandbox/lib/node_modules/<package> $HOME/.pi-sandbox/pi-extensions/<package>`
 3. Update the "Current packages" table in AGENTS.md
 4. Rebuild the image (user does this on the host)
 
@@ -94,7 +94,7 @@ After making changes, inform the user:
 ## Important Constraints
 
 - **You cannot rebuild the image from inside the container.** The Docker socket is not mounted (by design, for security). Changes take effect on the *next* container session after the user rebuilds.
-- **Do not modify `$HOME/.agent-sandbox/`** — that's the ephemeral in-image directory. Changes there are lost on rebuild. Always edit `$HOME/.sandbox-source/` instead.
+- **Do not modify `$HOME/.pi-sandbox/`** — that's the ephemeral in-image directory. Changes there are lost on rebuild. Always edit `$HOME/.sandbox-source/` instead.
 - **Keep AGENTS.md updated** — After making structural changes, update AGENTS.md so future agents understand the new state.
 - **Test the Dockerfile carefully** — A broken Dockerfile means the sandbox can't start. Use `validate.sh` before handing off.
 
