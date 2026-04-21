@@ -17,6 +17,16 @@ TMUX_MODE=false
 TMUX_SOCKET=""
 TMUX_SSH_HOST=""
 SSH_MODE=false
+NO_ASK_USER=false
+
+# -------------------------------------------------------------------
+# Extension enablement: which pi extensions to load via -e.
+# pi-ask-user is enabled by default; disable with --no-ask-user.
+# pi-tmux-debug is enabled by --tmux or --tmux-ssh.
+# To add a new extension: add a flag below that appends to
+# ENABLED_EXTENSIONS, and add the flag to --help.
+# -------------------------------------------------------------------
+ENABLED_EXTENSIONS=(pi-ask-user)
 
 while [[ $# -gt 0 ]]; do
     case "$1" in
@@ -26,6 +36,7 @@ while [[ $# -gt 0 ]]; do
         -x|--no-mount) NO_MOUNT=true; shift ;;
         --tmux)
             TMUX_MODE=true
+            ENABLED_EXTENSIONS+=(pi-tmux-debug)
             if [[ $# -gt 1 && ! "$2" =~ ^- ]]; then
                 TMUX_SOCKET="$(readlink -f $2)"
                 shift 2
@@ -44,13 +55,19 @@ while [[ $# -gt 0 ]]; do
                 echo "Error: --tmux-ssh requires a hostname" >&2; exit 1
             fi
             TMUX_SSH_HOST="$2"
+            ENABLED_EXTENSIONS+=(pi-tmux-debug)
             shift 2
             ;;
+        --no-ask-user)
+            NO_ASK_USER=true; shift ;;
         --) shift; break ;;
         -h|--help)
-            echo "Usage: $(basename "$0") [-w|--read-write] [-s|--self-modify] [--tmux [SOCKET]] [--] [COMMAND...]"
+            echo "Usage: $(basename "$0") [OPTIONS] [--] [PI-ARGS...] | [COMMAND...]"
             echo ""
             echo "Launch the agent-sandbox Docker container."
+            echo ""
+            echo "By default the container runs 'pi -ne -e pi-ask-user'. Extensions are"
+            echo "disabled unless explicitly enabled via the flags below."
             echo ""
             echo "Options:"
             echo "  -w, --read-write    Mount the working directory read-write (default: read-only)"
@@ -60,11 +77,24 @@ while [[ $# -gt 0 ]]; do
             echo "                      agent can connect to remote hosts via SSH"
             echo "  -s, --self-modify   Mount the sandbox source directory read-write so the agent"
             echo "                      can modify the sandbox itself (Dockerfile, entrypoint, etc.)"
-            echo "  --tmux [SOCKET]     Mount a tmux socket for the tmux debugging tool."
+            echo "  --tmux [SOCKET]     Mount a tmux socket and enable the pi-tmux-debug extension."
             echo "                      SOCKET defaults to the current tmux session's socket."
-            echo "  --tmux-ssh HOST    Enable SSH tmux mode: proxy tmux commands to HOST over SSH."
+            echo "  --tmux-ssh HOST    Enable SSH tmux mode and the pi-tmux-debug extension:"
+            echo "                      proxy tmux commands to HOST over SSH."
             echo "                      Requires -S/--ssh for SSH agent forwarding."
-            echo "  --                  End of options; remaining args override the container CMD"
+            echo "  --no-ask-user      Disable the pi-ask-user extension (enabled by default)"
+            echo "  --                  End of options; remaining args are passed to pi"
+            echo "                      (or used as the container command if not a pi flag)"
+            echo ""
+            echo "After --, if the first argument starts with '-' or is 'pi', it is treated as"
+            echo "a pi argument. Otherwise it replaces the container command entirely."
+            echo ""
+            echo "Examples:"
+            echo "  pi-sandbox                      # pi -ne -e pi-ask-user"
+            echo "  pi-sandbox --tmux               # pi -ne -e pi-ask-user -e pi-tmux-debug"
+            echo "  pi-sandbox --no-ask-user        # pi -ne (no extensions)"
+            echo "  pi-sandbox -- --resume          # pi -ne -e pi-ask-user --resume"
+            echo "  pi-sandbox -- bash              # bash (not pi)"
             exit 0
             ;;
         -*) echo "Unknown option: $1" >&2; exit 1 ;;
@@ -126,7 +156,23 @@ if $TMUX_MODE; then
     )
 fi
 
-# SSH mode: forward SSH agent socket and mount ~/.ssh read-only
+# Build PI_ENABLED_EXTENSIONS from the accumulated list.
+# --no-ask-user removes pi-ask-user but preserves other extensions.
+if $NO_ASK_USER; then
+    FILTERED=()
+    for ext in "${ENABLED_EXTENSIONS[@]}"; do
+        if [ "$ext" != "pi-ask-user" ]; then
+            FILTERED+=("$ext")
+        fi
+    done
+    ENABLED_EXTENSIONS=("${FILTERED[@]}")
+fi
+PI_ENABLED_EXTENSIONS=$(IFS=,; echo "${ENABLED_EXTENSIONS[*]}")
+
+DOCKER_ARGS+=(
+    --env PI_ENABLED_EXTENSIONS=$PI_ENABLED_EXTENSIONS
+)
+
 if $SSH_MODE; then
     if [[ -z "${SSH_AUTH_SOCK:-}" ]]; then
         echo "Error: SSH_AUTH_SOCK is not set. Is ssh-agent running?" >&2

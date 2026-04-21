@@ -74,7 +74,7 @@ Runs the container with bind mounts so the agent sees the host project directory
 ### Usage
 
 ```bash
-# Read-only mount (default) — agent can read but not modify your files
+# Default: pi with only pi-ask-user extension (read-only mount)
 ./pi-sandbox
 
 # Read-write mount — agent can modify files in the working directory
@@ -93,50 +93,96 @@ Runs the container with bind mounts so the agent sees the host project directory
 ./pi-sandbox -S
 ./pi-sandbox --ssh
 
+# Tmux debug mode — mount tmux socket + enable pi-tmux-debug extension
+./pi-sandbox --tmux
+./pi-sandbox --tmux /tmp/tmux-1000/default
+
+# Disable pi-ask-user (no extensions at all)
+./pi-sandbox --no-ask-user
+
+# Pass additional pi arguments after --
+./pi-sandbox -- --resume                  # pi -ne -e pi-ask-user --resume
+./pi-sandbox --tmux -- --resume            # pi -ne -e pi-ask-user -e pi-tmux-debug --resume
+
+# Override the container command entirely
+./pi-sandbox -- bash
+./pi-sandbox -w -- bash
+
 # Combine flags
 ./pi-sandbox -s -w
 ./pi-sandbox -s -x
 ./pi-sandbox -S -w
-
-# Override the container command
-./pi-sandbox -- bash
-./pi-sandbox -w -- bash
+./pi-sandbox -S --tmux
 ```
 
-## Pi Package Extensions
+## Extension Opt-In System
 
-Pi packages (npm packages with pi extensions/skills/prompts) are installed in
-the Dockerfile and discovered at runtime via an entrypoint script:
+Sandbox extensions are **disabled by default** and must be explicitly enabled
+via `pi-sandbox` flags. This gives users fine-grained control over which
+capabilities the agent has access to.
 
-1. **Install via npm** in the Dockerfile (step 8)
-2. **Symlink** into `/home/<username>/.agent-sandbox/pi-extensions/` (Dockerfile step 8)
-3. The **entrypoint script** iterates `pi-extensions/` at startup and creates matching
-   symlinks in `~/.pi/agent/extensions/`, where pi auto-discovers them
+### How It Works
 
-The `pi-extensions/` directory is a symlink farm — each subdirectory points to the
-package's actual location in the global `node_modules/`. The entrypoint bridges
-this farm into `~/.pi/agent/extensions/` (which is on the mounted `~/.pi` volume),
-so **settings.json never needs updating when packages are added or removed** —
-just add/remove the npm install + symlink in the Dockerfile.
+The `pi-sandbox` script builds a list of enabled extensions based on user flags
+and passes it to the container via the `PI_ENABLED_EXTENSIONS` environment
+variable. The container entrypoint then invokes pi with `-ne` (disable
+auto-discovery) and `-e <path>` for each enabled extension, so only explicitly
+opted-in extensions are loaded.
 
-> **Why not `settings.json` `extensions` glob?** The `extensions` setting in
-> settings.json treats entries with `*` as enable/disable patterns for already-
-> discovered extensions, not as path globs for discovering new extensions. Putting
-> a glob like `/path/pi-extensions/*` in `extensions` results in no extensions being
-> loaded because there are no auto-discovered paths for the pattern to match.
+The `~/.agent-sandbox/pi-extensions/` directory (baked into the image) serves
+as the **catalog** of available extensions — each subdirectory is a symlink to
+the package's actual location in the global `node_modules/`. The entrypoint
+resolves enabled extension names to paths in this directory and builds the
+appropriate `-e` flags.
+
+> **User's own host extensions:** With `-ne`, extensions in
+> `~/.pi/agent/extensions/` (mounted from the host) are not auto-discovered.
+> This is intentional — the sandbox is a controlled, opt-in environment.
+> If you need a host extension, pass it explicitly:
+> `pi-sandbox -- -e ~/.pi/agent/extensions/my-ext`
+
+### Extension Flags
+
+| Flag | Extensions enabled | Notes |
+|------|-------------------|-------|
+| *(default)* | `pi-ask-user` | `pi-ask-user` is always on unless explicitly disabled |
+| `--tmux [SOCKET]` | `pi-ask-user`, `pi-tmux-debug` | Also mounts tmux socket |
+| `--tmux-ssh HOST` | `pi-ask-user`, `pi-tmux-debug` | Proxies tmux over SSH |
+| `--no-ask-user` | *(none)* | Disables the default `pi-ask-user` extension |
+
+### Example Invocations
+
+| `pi-sandbox` command | Actual `pi` command in container |
+|---|---|
+| `pi-sandbox` | `pi -ne -e .../pi-ask-user` |
+| `pi-sandbox --tmux` | `pi -ne -e .../pi-ask-user -e .../pi-tmux-debug` |
+| `pi-sandbox --tmux-ssh host -S` | `pi -ne -e .../pi-ask-user -e .../pi-tmux-debug` |
+| `pi-sandbox --no-ask-user` | `pi -ne` (no extensions) |
+| `pi-sandbox -- --resume` | `pi -ne -e .../pi-ask-user --resume` |
+| `pi-sandbox -- -e /my/ext` | `pi -ne -e .../pi-ask-user -e /my/ext` |
+| `pi-sandbox -- bash` | `bash` (not pi) |
 
 Current packages:
 
-| Package | Purpose |
-|---------|--------|
-| `pi-ask-user` | Interactive `ask_user` tool with searchable selection UI |
-| `pi-tmux-debug` | Tmux interaction tool (`capture-pane`, `send-keys`, etc.) + `tmux-debug` skill |
+| Package | Purpose | Enabled by |
+|---------|---------|------------|
+| `pi-ask-user` | Interactive `ask_user` tool with searchable selection UI | default (disable with `--no-ask-user`) |
+| `pi-tmux-debug` | Tmux interaction tool (`capture-pane`, `send-keys`, etc.) + `tmux-debug` skill | `--tmux` or `--tmux-ssh` |
 
-**To add a new pi package:**
-1. For **npm packages**: add `npm install -g <package>` and a symlink line to Dockerfile step 8
-2. For **local packages** (in `packages/`): add COPY + `npm install -g` + symlink to Dockerfile (see step 8b)
-3. Add a row to the table above
-4. Rebuild the image
+### Adding a New Extension
+
+To add a new pi package to the sandbox:
+
+1. **Install the package** in the Dockerfile:
+   - For **npm packages**: add `npm install -g <package>` and a symlink line to Dockerfile step 8
+   - For **local packages** (in `packages/`): add COPY + `npm install -g` + symlink to Dockerfile (see step 8b)
+2. **Add a flag** in `pi-sandbox` that appends the extension name to `ENABLED_EXTENSIONS`
+   (e.g., `ENABLED_EXTENSIONS+=(pi-my-new-ext)`) and add the flag to the `--help` text
+3. **Add a row** to the tables above
+4. **Rebuild the image** (`./pi-build-sandbox`)
+
+No entrypoint changes are needed — it generically resolves extension names from
+`PI_ENABLED_EXTENSIONS` to paths in `~/.agent-sandbox/pi-extensions/`.
 
 ## Self-Modification
 
@@ -286,7 +332,7 @@ With `--ssh` (or `-S`), the sandbox forwards the host's SSH agent and mounts
 - `$HOME/.pi` is always mounted read-write so the agent can persist config, history, and session state.
 - `/home/<username>/.agent-sandbox` is baked into the Docker image (not a host mount). It is writable by the agent during a session but changes are **ephemeral** — they do not persist across container restarts.
 - `npm` is configured (via `NPM_CONFIG_PREFIX`) to install global packages into `/home/<username>/.agent-sandbox`. This means `npm install -g` places modules in `/home/<username>/.agent-sandbox/lib/node_modules/` and binaries in `/home/<username>/.agent-sandbox/bin/` (which is on `PATH`).
-- Pi packages are discovered via symlinks in `~/.pi/agent/extensions/` created by the entrypoint script at startup. The entrypoint reads from the `pi-extensions/` symlink farm baked into the image. Do **not** add individual packages to `settings.json` — add them to the Dockerfile symlink farm instead (see "Pi Package Extensions" above).
+- Extensions are **disabled by default** and loaded via pi's `-ne` + `-e` mechanism. The entrypoint reads `PI_ENABLED_EXTENSIONS` (set by `pi-sandbox`) and constructs the appropriate `-e` flags. Do **not** add individual packages to `settings.json` — control extension enablement via `pi-sandbox` flags (see "Extension Opt-In System" above).
 
 ## AGENTS.md
 

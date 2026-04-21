@@ -15,20 +15,45 @@ if [[ "${SANDBOX_SELF_MODIFY:-0}" == "1" && -d "$SANDBOX_SRC/skills" ]]; then
     done
 fi
 
-# Create extension symlinks in ~/.pi/agent/extensions/ for pi auto-discovery.
-# Each subdirectory in $HOME/.agent-sandbox/pi-extensions/ is symlinked.
-EXT_DIR="$HOME/.pi/agent/extensions"
-SRC_DIR="$HOME/.agent-sandbox/pi-extensions"
+# Extension enablement:
+# pi-sandbox sets PI_ENABLED_EXTENSIONS (comma-separated) based on user flags.
+# We run pi with -ne (disable auto-discovery) and -e <path> for each enabled
+# extension. This gives explicit control over which sandbox extensions are loaded.
+#
+# Available extensions are symlinked in $HOME/.agent-sandbox/pi-extensions/<name>.
+# The entrypoint resolves each enabled name to its path and builds -e flags.
+#
+# If the container command is NOT pi (e.g., "bash"), we skip extension injection
+# and exec the command as-is.
 
-if [ -d "$SRC_DIR" ]; then
-    mkdir -p "$EXT_DIR"
-    for entry in "$SRC_DIR"/*; do
-        name=$(basename "$entry")
-        # Resolve to actual target (in case entry itself is a symlink)
-        resolved=$(readlink -f "$entry")
-        target="$EXT_DIR/$name"
-        ln -sfn "$resolved" "$target"
+PI_EXT_DIR="$HOME/.agent-sandbox/pi-extensions"
+
+# Decide whether to inject extension flags into pi, or exec as-is.
+# - No args (default CMD "pi")        → inject
+# - First arg is "pi"                 → inject, shift past "pi"
+# - First arg starts with "-"         → inject (treat as pi flags)
+# - Anything else (e.g., "bash")     → exec as-is
+if [ $# -eq 0 ] || [ "$1" = "pi" ] || [ "${1#-}" != "$1" ]; then
+    # Build the pi command line: pi -ne -e <ext1> [-e <ext2>] ... [user-args]
+    PI_ARGS=(-ne)
+
+    IFS=',' read -ra EXT_NAMES <<< "${PI_ENABLED_EXTENSIONS:-}"
+    for name in "${EXT_NAMES[@]}"; do
+        ext_path="$PI_EXT_DIR/$name"
+        if [ -d "$ext_path" ]; then
+            PI_ARGS+=(-e "$ext_path")
+        else
+            echo "Warning: enabled extension '$name' not found at $ext_path" >&2
+        fi
     done
-fi
 
-exec "$@"
+    # Collect original args (skip leading "pi" if present)
+    if [ $# -gt 0 ] && [ "$1" = "pi" ]; then
+        shift
+    fi
+
+    exec pi "${PI_ARGS[@]}" "$@"
+else
+    # Not a pi command (e.g., bash, sh, node) — exec directly
+    exec "$@"
+fi
