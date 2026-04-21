@@ -2,12 +2,15 @@
  * Tmux Debug Tool Extension for pi-coding-agent
  *
  * Provides a `tmux` tool that lets the agent interact with a tmux session
- * by capturing pane output and sending keystrokes. Designed for debugging
- * scenarios where the agent's only access to the target system is through
- * a tmux session socket.
+ * by capturing pane output and sending keystrokes. Supports two modes:
  *
- * The tmux socket path is read from the TMUX_SOCKET_PATH environment variable,
- * which is set by the sandbox launch script when using the --tmux flag.
+ * 1. Local mode (default): interacts with a local tmux session via its socket.
+ *    The socket path is read from TMUX_SOCKET_PATH, set by --tmux flag.
+ *
+ * 2. SSH mode: proxies all tmux commands over SSH to a remote host.
+ *    Enabled by setting TMUX_SSH_HOST. Uses the remote host's default
+ *    tmux socket (as if the user SSH'd in and ran `tmux a`).
+ *    SSH connections use ControlMaster=auto for self-healing multiplexing.
  */
 
 import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
@@ -20,11 +23,44 @@ const WAIT_POLL_INTERVAL_MS = 500;
 const WAIT_STABLE_POLLS = 2; // Need 2 consecutive identical captures (1s of stability)
 const WAIT_DEFAULT_TIMEOUT_S = 30;
 
+// SSH ControlMaster options for self-healing connection multiplexing
+// Control socket goes in /tmp (not ~/.ssh, which is read-only when mounted via --ssh)
+const SSH_CONTROL_PATH = "/tmp/ssh-ctrl-%h";
+const SSH_OPTIONS = [
+	"-o", "ControlMaster=auto",
+	"-o", `ControlPath=${SSH_CONTROL_PATH}`,
+	"-o", "ControlPersist=10m",
+	"-o", "ServerAliveInterval=15",
+	"-o", "ServerAliveCountMax=4",
+] as const;
+
+// Patterns that indicate SSH connection errors (vs tmux errors)
+const SSH_ERROR_PATTERNS = [
+	"Connection refused",
+	"Connection timed out",
+	"Connection reset",
+	"Connection reset by peer",
+	"Host key verification failed",
+	"Permission denied",
+	"No route to host",
+	"Network is unreachable",
+	"Broken pipe",
+	"control socket",
+] as const;
+
 export default function (pi: ExtensionAPI) {
 	/**
-	 * Build the base tmux arguments for socket targeting.
+	 * Whether we're operating in SSH mode (proxy tmux commands over SSH).
+	 */
+	function isSshMode(): boolean {
+		return !!process.env.TMUX_SSH_HOST;
+	}
+
+	/**
+	 * Build the base tmux arguments for local socket targeting.
 	 * If TMUX_SOCKET_PATH is set, use -S to connect to that socket.
 	 * Otherwise, fall back to default tmux behavior (TMUX env var or default socket).
+	 * Not used in SSH mode — remote host uses its default socket.
 	 */
 	function getTmuxBaseArgs(): string[] {
 		const socketPath = process.env.TMUX_SOCKET_PATH;
@@ -46,16 +82,30 @@ export default function (pi: ExtensionAPI) {
 
 	/**
 	 * Execute a tmux command and return the result.
+	 * In SSH mode, proxies via `ssh <host> tmux <args>` with ControlMaster=auto.
+	 * In local mode, runs `tmux [-S <socket>] <args>` directly.
 	 */
 	async function tmuxExec(
 		args: string[],
 		options: { signal?: AbortSignal; timeout?: number } = {},
 	) {
-		const baseArgs = getTmuxBaseArgs();
-		return pi.exec("tmux", [...baseArgs, ...args], {
-			signal: options.signal,
-			timeout: options.timeout ?? TMUX_EXEC_TIMEOUT,
-		});
+		const sshHost = process.env.TMUX_SSH_HOST;
+
+		if (sshHost) {
+			// SSH mode: ssh [control-opts] <host> tmux <args...>
+			// Uses default tmux socket on remote host (no -S flag)
+			return pi.exec("ssh", [...SSH_OPTIONS, sshHost, "tmux", ...args], {
+				signal: options.signal,
+				timeout: options.timeout ?? TMUX_EXEC_TIMEOUT,
+			});
+		} else {
+			// Local mode: tmux [-S <socket>] <args...>
+			const baseArgs = getTmuxBaseArgs();
+			return pi.exec("tmux", [...baseArgs, ...args], {
+				signal: options.signal,
+				timeout: options.timeout ?? TMUX_EXEC_TIMEOUT,
+			});
+		}
 	}
 
 	/**
@@ -76,11 +126,15 @@ export default function (pi: ExtensionAPI) {
 		}
 
 		if (result.code !== 0) {
-			const errorText = result.stderr.trim() || `tmux exited with code ${result.code}`;
+			const stderr = result.stderr.trim();
+			const isSshError = isSshMode() && SSH_ERROR_PATTERNS.some(p => stderr.includes(p));
+			const errorText = isSshError
+				? `SSH error: ${stderr || `ssh exited with code ${result.code}`}`
+				: (stderr || `tmux exited with code ${result.code}`);
 			return {
 				content: [{ type: "text" as const, text: `Error: ${errorText}` }],
 				isError: true,
-				details: { ...details, action, exitCode: result.code },
+				details: { ...details, action, exitCode: result.code, isSshError: isSshError || undefined },
 			};
 		}
 

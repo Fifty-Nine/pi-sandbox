@@ -1,11 +1,30 @@
 ---
 name: tmux-debug
-description: Debug issues in a user-provided tmux session by capturing pane output and sending keystrokes. Use when the user wants you to interact with a running tmux session.
+description: Debug issues in a tmux session by capturing pane output and sending keystrokes. Works with local tmux sessions (via socket mount) or remote tmux sessions (via SSH). Use when the user wants you to interact with a running tmux session.
 ---
 
 # Tmux Debug
 
 This skill lets you debug issues in a tmux session by capturing what's on screen and sending keystrokes. You interact with the target system exclusively through the tmux tool — you can see terminal output and type commands, just like sitting at the keyboard.
+
+## Modes
+
+The tmux tool supports two modes, configured by the sandbox launch script:
+
+### Local Mode (`--tmux`)
+Interacts with a local tmux session via its Unix socket. The socket is mounted into the container and `TMUX_SOCKET_PATH` is set.
+
+### SSH Mode (`--tmux-ssh HOST`)
+Proxies all tmux commands over SSH to a remote host. Uses the remote host's default tmux socket (as if you SSH'd in and ran `tmux a`). SSH connections use `ControlMaster=auto` for self-healing multiplexing — no manual setup is needed, and if a connection drops, the next command automatically re-establishes it.
+
+Requires `--ssh` for SSH agent forwarding.
+
+```bash
+# Example: SSH to d-ubuntu-44 with SSH auth
+./sandbox -S --tmux-ssh d-ubuntu-44
+```
+
+**SSH error handling:** If an SSH connection error occurs, the tool reports it as an `SSH error:` (vs `tmux error:`). The `waitForCompletion` polling loop automatically retries on transient SSH errors. With `ControlMaster=auto`, transient failures self-heal — the next SSH call creates a fresh connection.
 
 ## Getting Started
 
@@ -206,3 +225,7 @@ action: send_keys
 keys: "q"
 wait: true
 ```
+
+### Handle SSH connection errors (SSH mode only)
+
+If you see `SSH error:` in the output, the connection to the remote host may have dropped. With `ControlMaster=auto`, simply retrying the same command usually works — a fresh connection is established automatically. For persistent failures, check that the remote host is reachable and SSH auth is working.

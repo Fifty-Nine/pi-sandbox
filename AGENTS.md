@@ -197,6 +197,50 @@ with a user-provided tmux session.
    If the host runs a newer tmux version, update the `TMUX_VERSION` build arg in
    the Dockerfile accordingly.
 
+## Tmux SSH Mode
+
+With `--tmux-ssh <host>`, the sandbox enables the `tmux` tool to proxy all
+commands over SSH to a remote host's tmux sessions. This is an alternative
+to `--tmux` (local socket) that works when the target tmux is running on
+a remote machine you can SSH into.
+
+**How it works:**
+
+- Sets `TMUX_SSH_HOST` env var in the container, which the `tmux` tool reads
+- The tool runs `ssh <host> tmux <args>` for every action (capture-pane,
+  send-keys, list-sessions, etc.)
+- Uses the remote host's **default tmux socket** — no `-S` flag is sent,
+  as if you SSH'd in yourself and ran `tmux a`
+- SSH connections use **ControlMaster=auto** with `ControlPersist=10m` and
+  `ServerAliveInterval=15`, so connections are multiplexed (low overhead)
+  and self-healing (if the master dies, the next call creates a new one)
+
+**Prerequisites:**
+
+- `--ssh` (`-S`) must also be specified so the SSH agent is forwarded
+- The remote host must have `tmux` installed and running sessions
+- `~/.ssh/config` should have `StrictHostKeyChecking=accept-new` or `no`
+  for the target host (since `~/.ssh` is mounted read-only, the agent
+  cannot add new host keys)
+
+```bash
+# SSH tmux mode — proxy tmux tool to remote host
+./sandbox -S --tmux-ssh d-ubuntu-44
+
+# Combine with other flags
+./sandbox -S --tmux-ssh d-ubuntu-44 -w
+./sandbox -S --tmux-ssh d-ubuntu-44 -s
+```
+
+**Error handling:** The tmux tool distinguishes SSH errors (connection
+refused, timed out, etc.) from tmux errors, so the agent knows when a
+connection issue needs to be resolved vs a tmux command failure. Transient
+SSH errors (like a dropped ControlMaster) are self-healing — the next
+`ssh` call automatically creates a new connection.
+
+**`--tmux` and `--tmux-ssh` are mutually exclusive** — use one or the other.
+`--tmux` for local socket access, `--tmux-ssh` for remote access over SSH.
+
 ## SSH Mode
 
 With `--ssh` (or `-S`), the sandbox forwards the host's SSH agent and mounts
@@ -232,7 +276,8 @@ With `--ssh` (or `-S`), the sandbox forwards the host's SSH agent and mounts
 # Combine with other flags
 ./sandbox -S -w          # SSH + read-write mount
 ./sandbox -S -s          # SSH + self-modify
-./sandbox -S --tmux      # SSH + tmux debug
+./sandbox -S --tmux          # SSH + local tmux debug
+./sandbox -S --tmux-ssh host # SSH + remote tmux over SSH
 ```
 
 ## Notes

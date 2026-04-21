@@ -15,6 +15,7 @@ SELF_MODIFY=false
 NO_MOUNT=false
 TMUX_MODE=false
 TMUX_SOCKET=""
+TMUX_SSH_HOST=""
 SSH_MODE=false
 
 while [[ $# -gt 0 ]]; do
@@ -38,6 +39,13 @@ while [[ $# -gt 0 ]]; do
                 shift
             fi
             ;;
+        --tmux-ssh)
+            if [[ $# -lt 2 ]]; then
+                echo "Error: --tmux-ssh requires a hostname" >&2; exit 1
+            fi
+            TMUX_SSH_HOST="$2"
+            shift 2
+            ;;
         --) shift; break ;;
         -h|--help)
             echo "Usage: $(basename "$0") [-w|--read-write] [-s|--self-modify] [--tmux [SOCKET]] [--] [COMMAND...]"
@@ -54,6 +62,8 @@ while [[ $# -gt 0 ]]; do
             echo "                      can modify the sandbox itself (Dockerfile, entrypoint, etc.)"
             echo "  --tmux [SOCKET]     Mount a tmux socket for the tmux debugging tool."
             echo "                      SOCKET defaults to the current tmux session's socket."
+            echo "  --tmux-ssh HOST    Enable SSH tmux mode: proxy tmux commands to HOST over SSH."
+            echo "                      Requires -S/--ssh for SSH agent forwarding."
             echo "  --                  End of options; remaining args override the container CMD"
             exit 0
             ;;
@@ -134,6 +144,17 @@ if $SSH_MODE; then
         --mount "type=bind,source=$SSH_AUTH_SOCK_DIR,target=/ssh-agent-socket"
         --env SSH_AUTH_SOCK=$SSH_MOUNTED_SOCK
         --mount "type=bind,source=$HOME/.ssh,target=$CONTAINER_HOME/.ssh,readonly"
+    )
+fi
+
+# Tmux SSH mode: set env var for the tmux tool to proxy over SSH
+if [[ -n "$TMUX_SSH_HOST" ]]; then
+    if $TMUX_MODE; then
+        echo "Error: --tmux and --tmux-ssh are mutually exclusive. Use one or the other." >&2
+        exit 1
+    fi
+    DOCKER_ARGS+=(
+        --env TMUX_SSH_HOST=$TMUX_SSH_HOST
     )
 fi
 
