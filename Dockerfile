@@ -107,21 +107,23 @@ ENV PATH="/home/${SANDBOX_USER}/.agent-sandbox/bin:${PATH}"
 # 8. Install pi-coding-agent globally (as sandbox user so files are owned by them)
 # -------------------------------------------------------------------
 USER ${SANDBOX_USER}
-RUN npm install -g @mariozechner/pi-coding-agent pi-ask-user
+RUN npm install -g @mariozechner/pi-coding-agent pi-ask-user pi-searxng
 
 # Create pi-extensions symlink farm (used by entrypoint to discover packages)
 # Adding a new package = add symlink here + update entrypoint script
 RUN mkdir -p /home/${SANDBOX_USER}/.agent-sandbox/pi-extensions \
  && ln -s /home/${SANDBOX_USER}/.agent-sandbox/lib/node_modules/pi-ask-user \
-         /home/${SANDBOX_USER}/.agent-sandbox/pi-extensions/pi-ask-user
+         /home/${SANDBOX_USER}/.agent-sandbox/pi-extensions/pi-ask-user \
+ && ln -s /home/${SANDBOX_USER}/.agent-sandbox/lib/node_modules/pi-searxng \
+         /home/${SANDBOX_USER}/.agent-sandbox/pi-extensions/pi-searxng
 
 # -------------------------------------------------------------------
 # 8b. Install local pi packages
 # -------------------------------------------------------------------
-COPY --chown=${SANDBOX_USER}:${SANDBOX_GROUP} packages/pi-searxng /home/${SANDBOX_USER}/.agent-sandbox/pkg-src/pi-searxng
-RUN npm install -g /home/${SANDBOX_USER}/.agent-sandbox/pkg-src/pi-searxng \
- && ln -s /home/${SANDBOX_USER}/.agent-sandbox/lib/node_modules/pi-searxng \
-         /home/${SANDBOX_USER}/.agent-sandbox/pi-extensions/pi-searxng
+# Overlay local pi-searxng (from submodule) on top of the npm-installed version.
+# The npm install in step 8 resolves all dependencies; the COPY overwrites
+# only the package source files with our patched version.
+COPY --chown=${SANDBOX_USER}:${SANDBOX_GROUP} packages/pi-searxng /home/${SANDBOX_USER}/.agent-sandbox/lib/node_modules/pi-searxng
 
 COPY --chown=${SANDBOX_USER}:${SANDBOX_GROUP} packages/pi-tmux-debug /home/${SANDBOX_USER}/.agent-sandbox/pkg-src/pi-tmux-debug
 RUN npm install -g /home/${SANDBOX_USER}/.agent-sandbox/pkg-src/pi-tmux-debug \
