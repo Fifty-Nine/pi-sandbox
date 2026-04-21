@@ -16,6 +16,9 @@ import { StringEnum } from "@mariozechner/pi-ai";
 
 const TMUX_EXEC_TIMEOUT = 10_000;
 const TMUX_SEND_TIMEOUT = 5_000;
+const WAIT_POLL_INTERVAL_MS = 500;
+const WAIT_STABLE_POLLS = 2; // Need 2 consecutive identical captures (1s of stability)
+const WAIT_DEFAULT_TIMEOUT_S = 30;
 
 export default function (pi: ExtensionAPI) {
 	/**
@@ -57,6 +60,7 @@ export default function (pi: ExtensionAPI) {
 
 	/**
 	 * Format a tmux exec result as a tool result, handling errors.
+	 * Returns null if no error.
 	 */
 	function handleResult(
 		result: { stdout: string; stderr: string; code: number; killed: boolean },
@@ -80,7 +84,78 @@ export default function (pi: ExtensionAPI) {
 			};
 		}
 
-		return null; // No error
+		return null;
+	}
+
+	/**
+	 * Sleep for a given number of milliseconds, interrupted by AbortSignal.
+	 * Returns true if the sleep completed, false if the signal was aborted.
+	 */
+	function sleep(ms: number, signal?: AbortSignal): Promise<boolean> {
+		return new Promise((resolve) => {
+			if (signal?.aborted) {
+				resolve(false);
+				return;
+			}
+			const timer = setTimeout(() => {
+				resolve(true);
+			}, ms);
+			signal?.addEventListener("abort", () => {
+				clearTimeout(timer);
+				resolve(false);
+			}, { once: true });
+		});
+	}
+
+	/**
+	 * Wait for a pane's content to stabilize after sending a command.
+	 * Polls capture-pane at intervals until the content is identical across
+	 * consecutive polls (indicating the command has finished and the prompt
+	 * has returned) or until the timeout is reached.
+	 *
+	 * Returns the stabilized pane content, or a timeout message with whatever
+	 * was captured last.
+	 */
+	async function waitForCompletion(
+		targetArgs: string[],
+		timeoutS: number,
+		signal: AbortSignal | undefined,
+	): Promise<{ content: string; completed: boolean; timedOut: boolean }> {
+		const timeoutMs = timeoutS * 1000;
+		const startTime = Date.now();
+		let lastContent: string | null = null;
+		let stableCount = 0;
+
+		while (Date.now() - startTime < timeoutMs) {
+			const slept = await sleep(WAIT_POLL_INTERVAL_MS, signal);
+			if (!slept) {
+				// Aborted
+				return { content: lastContent ?? "", completed: false, timedOut: false };
+			}
+
+			const captureResult = await tmuxExec(["capture-pane", "-p", ...targetArgs], { signal });
+			if (captureResult.code !== 0) {
+				// Retry on transient errors
+				continue;
+			}
+
+			const currentContent = captureResult.stdout;
+
+			if (currentContent === lastContent) {
+				stableCount++;
+				if (stableCount >= WAIT_STABLE_POLLS) {
+					const trimmed = currentContent.replace(/\n+$/, "");
+					return { content: trimmed || "(empty pane)", completed: true, timedOut: false };
+				}
+			} else {
+				stableCount = 0;
+				lastContent = currentContent;
+			}
+		}
+
+		// Timeout — return whatever we last captured
+		const trimmed = (lastContent ?? "").replace(/\n+$/, "");
+		return { content: trimmed || "(empty pane)", completed: false, timedOut: true };
 	}
 
 	pi.registerTool({
@@ -90,7 +165,7 @@ export default function (pi: ExtensionAPI) {
 
 Actions:
 - capture_pane: Capture the visible content (and optionally scrollback) of a tmux pane. This is how you "see" what's on the terminal.
-- send_keys: Send keystrokes to a tmux pane. This is how you "type" commands or send control sequences.
+- send_keys: Send keystrokes to a tmux pane. This is how you "type" commands or send control sequences. Supports waiting for command completion.
 - list_sessions: List all tmux sessions. Use this first to discover available sessions.
 - list_windows: List windows in a tmux session.
 - list_panes: List panes in a tmux window or session.
@@ -101,7 +176,13 @@ The 'target' parameter uses tmux's target format:
 - "session_name:window_index.pane_index" — target a specific pane (e.g., "mysession:0.1")
 - Omit to target the currently active pane
 
-Common tmux key names for send_keys: Enter, Escape, Tab, Backspace, Up, Down, Left, Right, Home, End, PgUp, PgDn, C-c (Ctrl+C), C-d (Ctrl+D), C-z (Ctrl+Z), C-l (Ctrl+L to clear screen), F1–F12, Space.`,
+Common tmux key names for send_keys: Enter, Escape, Tab, Backspace, Up, Down, Left, Right, Home, End, PgUp, PgDn, C-c (Ctrl+C), C-d (Ctrl+D), C-z (Ctrl+Z), C-l (Ctrl+L to clear screen), F1–F12, Space.
+
+When using send_keys with wait=true, the tool polls the pane content until it stabilizes
+(consecutive captures are identical, indicating the command has finished and the prompt
+has returned), then returns the captured output. This avoids the need for manual
+capture_pane polling after every command. If the command doesn't complete within
+wait_timeout seconds, the tool returns whatever was captured along with a timeout notice.`,
 		promptSnippet: "Interact with a tmux session via capture-pane, send-keys, and list commands",
 		promptGuidelines: [
 			"Always capture the pane first to understand the current state before sending keys.",
@@ -109,6 +190,8 @@ Common tmux key names for send_keys: Enter, Escape, Tab, Backspace, Up, Down, Le
 			"Use list_sessions first if you don't know the session name.",
 			"Use send_keys with enter=true to run commands; use keys like 'C-c' for control sequences.",
 			"Iterate: observe output → form hypothesis → test with command → observe result.",
+			"Use wait=true on send_keys to wait for a command to finish and get the output in one call.",
+			"If a command times out while waiting, send C-c to interrupt it, then retry or adjust.",
 		],
 		parameters: Type.Object({
 			action: StringEnum(
@@ -138,10 +221,22 @@ Common tmux key names for send_keys: Enter, Escape, Tab, Backspace, Up, Down, Le
 						"Number of lines of scrollback history to include (for capture_pane action). Default: 0 (visible content only). Use larger values to see output that has scrolled off-screen.",
 				}),
 			),
+			wait: Type.Optional(
+				Type.Boolean({
+					description:
+						"Wait for command completion after sending keys (for send_keys action). Polls the pane until content stabilizes, then returns the output. Default: false (return immediately).",
+				}),
+			),
+			wait_timeout: Type.Optional(
+				Type.Number({
+					description:
+						"Maximum seconds to wait for command completion (for send_keys with wait=true). Default: 30. Ignored when wait is false or omitted.",
+				}),
+			),
 		}),
 
 		async execute(_toolCallId, params, signal, _onUpdate, _ctx) {
-			const { action, target, keys, enter, scrollback } = params;
+			const { action, target, keys, enter, scrollback, wait, wait_timeout } = params;
 			const targetArgs = buildTargetArgs(target);
 			const baseDetails: Record<string, unknown> = { target };
 
@@ -183,10 +278,56 @@ Common tmux key names for send_keys: Enter, Escape, Tab, Backspace, Up, Down, Le
 						const error = handleResult(result, action, { ...baseDetails, keys, enter });
 						if (error) return error;
 
-						const sentDescription = enter ? `${keys} + Enter` : keys;
+						// Without wait: return immediately
+						if (!wait) {
+							const sentDescription = enter ? `${keys} + Enter` : keys;
+							return {
+								content: [{ type: "text", text: `Keys sent: ${sentDescription}` }],
+								details: { ...baseDetails, action, keys, enter },
+							};
+						}
+
+						// With wait: poll until content stabilizes or timeout
+						const timeoutS = wait_timeout ?? WAIT_DEFAULT_TIMEOUT_S;
+						const waitResult = await waitForCompletion(targetArgs, timeoutS, signal);
+
+						if (waitResult.completed) {
+							return {
+								content: [{ type: "text", text: waitResult.content }],
+								details: {
+									...baseDetails,
+									action,
+									keys,
+									enter,
+									wait: true,
+									completed: true,
+								},
+							};
+						}
+
+						if (waitResult.timedOut) {
+							return {
+								content: [{
+									type: "text",
+									text: `Command may still be running (waited ${timeoutS}s). Current pane:\n\n${waitResult.content}`,
+								}],
+								details: {
+									...baseDetails,
+									action,
+									keys,
+									enter,
+									wait: true,
+									completed: false,
+									timedOut: true,
+								},
+							};
+						}
+
+						// Aborted
 						return {
-							content: [{ type: "text", text: `Keys sent: ${sentDescription}` }],
-							details: { ...baseDetails, action, keys, enter },
+							content: [{ type: "text", text: `Wait was cancelled. Last captured pane:\n\n${waitResult.content}` }],
+							isError: true,
+							details: { ...baseDetails, action, keys, enter, wait: true, completed: false, timedOut: false },
 						};
 					}
 

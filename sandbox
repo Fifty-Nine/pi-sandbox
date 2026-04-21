@@ -14,7 +14,7 @@ while [[ $# -gt 0 ]]; do
         --tmux)
             TMUX_MODE=true
             if [[ $# -gt 1 && ! "$2" =~ ^- ]]; then
-                TMUX_SOCKET="$2"
+                TMUX_SOCKET="$(readlink -f $2)"
                 shift 2
             else
                 # Auto-detect: extract socket path from $TMUX or use default
