@@ -120,10 +120,10 @@ RUN mkdir -p /home/${SANDBOX_USER}/.agent-sandbox/pi-extensions \
 # -------------------------------------------------------------------
 # 8b. Install local pi packages
 # -------------------------------------------------------------------
-# Overlay local pi-searxng (from submodule) on top of the npm-installed version.
-# The npm install in step 8 resolves all dependencies; the COPY overwrites
-# only the package source files with our patched version.
-COPY --chown=${SANDBOX_USER}:${SANDBOX_GROUP} packages/pi-searxng /home/${SANDBOX_USER}/.agent-sandbox/lib/node_modules/pi-searxng
+# Overlay patched pi-searxng index.ts on top of the npm-installed version.
+# The npm install in step 8 resolves all dependencies; this COPY overwrites
+# only the patched source file with our fix (prepending page title to content).
+COPY --chown=${SANDBOX_USER}:${SANDBOX_GROUP} packages/pi-searxng/index.ts /home/${SANDBOX_USER}/.agent-sandbox/lib/node_modules/pi-searxng/index.ts
 
 COPY --chown=${SANDBOX_USER}:${SANDBOX_GROUP} packages/pi-tmux-debug /home/${SANDBOX_USER}/.agent-sandbox/pkg-src/pi-tmux-debug
 RUN npm install -g /home/${SANDBOX_USER}/.agent-sandbox/pkg-src/pi-tmux-debug \
