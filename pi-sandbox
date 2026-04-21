@@ -26,7 +26,7 @@ NO_ASK_USER=false
 # To add a new extension: add a flag below that appends to
 # ENABLED_EXTENSIONS, and add the flag to --help.
 # -------------------------------------------------------------------
-ENABLED_EXTENSIONS=(pi-ask-user)
+ENABLED_EXTENSIONS=(pi-ask-user pi-searxng)
 
 while [[ $# -gt 0 ]]; do
     case "$1" in
@@ -82,7 +82,8 @@ while [[ $# -gt 0 ]]; do
             echo "  --tmux-ssh HOST    Enable SSH tmux mode and the pi-tmux-debug extension:"
             echo "                      proxy tmux commands to HOST over SSH."
             echo "                      Requires -S/--ssh for SSH agent forwarding."
-            echo "  --no-ask-user      Disable the pi-ask-user extension (enabled by default)"
+            echo "  --no-searxng       Disable the pi-searxng extension (enabled by default)
+  --no-ask-user      Disable the pi-ask-user extension (enabled by default)"
             echo "  --                  End of options; remaining args are passed to pi"
             echo "                      (or used as the container command if not a pi flag)"
             echo ""
@@ -90,9 +91,9 @@ while [[ $# -gt 0 ]]; do
             echo "a pi argument. Otherwise it replaces the container command entirely."
             echo ""
             echo "Examples:"
-            echo "  pi-sandbox                      # pi -ne -e pi-ask-user"
+            echo "  pi-sandbox                      # pi -ne -e pi-ask-user -e pi-searxng"
             echo "  pi-sandbox --tmux               # pi -ne -e pi-ask-user -e pi-tmux-debug"
-            echo "  pi-sandbox --no-ask-user        # pi -ne (no extensions)"
+            echo "  pi-sandbox --no-ask-user        # pi -ne -e pi-searxng"
             echo "  pi-sandbox -- --resume          # pi -ne -e pi-ask-user --resume"
             echo "  pi-sandbox -- bash              # bash (not pi)"
             exit 0

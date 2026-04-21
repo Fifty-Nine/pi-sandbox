@@ -118,7 +118,8 @@ Runs the container with bind mounts so the agent sees the host project directory
 ## Extension Opt-In System
 
 Sandbox extensions are **disabled by default** and must be explicitly enabled
-via `pi-sandbox` flags. This gives users fine-grained control over which
+via `pi-sandbox` flags, except for `pi-ask-user` and `pi-searxng` which are
+enabled by default. This gives users fine-grained control over which
 capabilities the agent has access to.
 
 ### How It Works
@@ -145,21 +146,25 @@ appropriate `-e` flags.
 
 | Flag | Extensions enabled | Notes |
 |------|-------------------|-------|
-| *(default)* | `pi-ask-user` | `pi-ask-user` is always on unless explicitly disabled |
-| `--tmux [SOCKET]` | `pi-ask-user`, `pi-tmux-debug` | Also mounts tmux socket |
-| `--tmux-ssh HOST` | `pi-ask-user`, `pi-tmux-debug` | Proxies tmux over SSH |
-| `--no-ask-user` | *(none)* | Disables the default `pi-ask-user` extension |
+| *(default)* | `pi-ask-user`, `pi-searxng` | Default extensions are always on unless explicitly disabled |
+| `--tmux [SOCKET]` | `pi-ask-user`, `pi-searxng`, `pi-tmux-debug` | Also mounts tmux socket |
+| `--tmux-ssh HOST` | `pi-ask-user`, `pi-searxng`, `pi-tmux-debug` | Proxies tmux over SSH |
+| `--no-ask-user` | `pi-searxng` | Disables only `pi-ask-user`; other defaults remain |
+| `--no-searxng` | `pi-ask-user` | Disables only `pi-searxng`; other defaults remain |
+| `--no-ask-user --no-searxng` | *(none)* | Disables all default extensions |
 
 ### Example Invocations
 
 | `pi-sandbox` command | Actual `pi` command in container |
 |---|---|
-| `pi-sandbox` | `pi -ne -e .../pi-ask-user` |
-| `pi-sandbox --tmux` | `pi -ne -e .../pi-ask-user -e .../pi-tmux-debug` |
-| `pi-sandbox --tmux-ssh host -S` | `pi -ne -e .../pi-ask-user -e .../pi-tmux-debug` |
-| `pi-sandbox --no-ask-user` | `pi -ne` (no extensions) |
-| `pi-sandbox -- --resume` | `pi -ne -e .../pi-ask-user --resume` |
-| `pi-sandbox -- -e /my/ext` | `pi -ne -e .../pi-ask-user -e /my/ext` |
+| `pi-sandbox` | `pi -ne -e .../pi-ask-user -e .../pi-searxng` |
+| `pi-sandbox --tmux` | `pi -ne -e .../pi-ask-user -e .../pi-searxng -e .../pi-tmux-debug` |
+| `pi-sandbox --tmux-ssh host -S` | `pi -ne -e .../pi-ask-user -e .../pi-searxng -e .../pi-tmux-debug` |
+| `pi-sandbox --no-ask-user` | `pi -ne -e .../pi-searxng` |
+| `pi-sandbox --no-searxng` | `pi -ne -e .../pi-ask-user` |
+| `pi-sandbox --no-ask-user --no-searxng` | `pi -ne` (no extensions) |
+| `pi-sandbox -- --resume` | `pi -ne -e .../pi-ask-user -e .../pi-searxng --resume` |
+| `pi-sandbox -- -e /my/ext` | `pi -ne -e .../pi-ask-user -e .../pi-searxng -e /my/ext` |
 | `pi-sandbox -- bash` | `bash` (not pi) |
 
 Current packages:
@@ -167,6 +172,7 @@ Current packages:
 | Package | Purpose | Enabled by |
 |---------|---------|------------|
 | `pi-ask-user` | Interactive `ask_user` tool with searchable selection UI | default (disable with `--no-ask-user`) |
+| `pi-searxng` | SearXNG web search tool for the agent | default (disable with `--no-searxng`) |
 | `pi-tmux-debug` | Tmux interaction tool (`capture-pane`, `send-keys`, etc.) + `tmux-debug` skill | `--tmux` or `--tmux-ssh` |
 
 ### Adding a New Extension
