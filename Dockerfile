@@ -111,7 +111,7 @@ USER ${SANDBOX_USER}
 RUN npm install -g @mariozechner/pi-coding-agent pi-ask-user pi-searxng
 
 # Create pi-extensions symlink farm (used by entrypoint to discover packages)
-# Adding a new package = add symlink here + update entrypoint script
+# Adding a new package = add symlink here + add flag in pi-sandbox
 RUN mkdir -p /home/${SANDBOX_USER}/.pi-sandbox/pi-extensions \
  && ln -s /home/${SANDBOX_USER}/.pi-sandbox/lib/node_modules/pi-ask-user \
          /home/${SANDBOX_USER}/.pi-sandbox/pi-extensions/pi-ask-user \
@@ -132,9 +132,9 @@ RUN npm install -g /home/${SANDBOX_USER}/.pi-sandbox/pkg-src/pi-tmux-debug \
          /home/${SANDBOX_USER}/.pi-sandbox/pi-extensions/pi-tmux-debug
 
 # -------------------------------------------------------------------
-# 9. Copy entrypoint script that symlinks pi packages into
-#     ~/.pi/agent/extensions/ at startup for auto-discovery.
-#     Adding a new package = install above + add to entrypoint script.
+# 9. Copy entrypoint script that constructs pi -ne -e <path> ...
+#     from PI_ENABLED_EXTENSIONS at startup.
+#     Adding a new package = install above + add flag in pi-sandbox.
 # -------------------------------------------------------------------
 COPY --chmod=755 entrypoint /usr/local/bin/sandbox-entrypoint
 

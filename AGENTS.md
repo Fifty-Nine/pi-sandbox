@@ -120,12 +120,12 @@ session history, and skills remain accessible and new sessions persist to the ho
 ./pi-sandbox --tmux
 ./pi-sandbox --tmux /tmp/tmux-1000/default
 
-# Disable pi-ask-user (no extensions at all)
+# Disable pi-ask-user (pi-searxng still enabled)
 ./pi-sandbox --no-ask-user
 
 # Pass additional pi arguments after --
-./pi-sandbox -- --resume                  # pi -ne -e pi-ask-user --resume
-./pi-sandbox --tmux -- --resume            # pi -ne -e pi-ask-user -e pi-tmux-debug --resume
+./pi-sandbox -- --resume                  # pi -ne -e pi-ask-user -e pi-searxng --resume
+./pi-sandbox --tmux -- --resume            # pi -ne -e pi-ask-user -e pi-searxng -e pi-tmux-debug --resume
 
 # Override the container command entirely
 ./pi-sandbox -- bash

@@ -69,7 +69,7 @@ while [[ $# -gt 0 ]]; do
             echo ""
             echo "Launch the pi-sandbox Podman container."
             echo ""
-            echo "By default the container runs 'pi -ne -e pi-ask-user'. Extensions are"
+            echo "By default the container runs 'pi -ne -e pi-ask-user -e pi-searxng'. Extensions are"
             echo "disabled unless explicitly enabled via the flags below."
             echo ""
             echo "Options:"
@@ -95,9 +95,9 @@ while [[ $# -gt 0 ]]; do
             echo ""
             echo "Examples:"
             echo "  pi-sandbox                      # pi -ne -e pi-ask-user -e pi-searxng"
-            echo "  pi-sandbox --tmux               # pi -ne -e pi-ask-user -e pi-tmux-debug"
+            echo "  pi-sandbox --tmux               # pi -ne -e pi-ask-user -e pi-searxng -e pi-tmux-debug"
             echo "  pi-sandbox --no-ask-user        # pi -ne -e pi-searxng"
-            echo "  pi-sandbox -- --resume          # pi -ne -e pi-ask-user --resume"
+            echo "  pi-sandbox -- --resume          # pi -ne -e pi-ask-user -e pi-searxng --resume"
             echo "  pi-sandbox -- bash              # bash (not pi)"
             exit 0
             ;;

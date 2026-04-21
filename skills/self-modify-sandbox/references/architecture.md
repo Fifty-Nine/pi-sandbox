@@ -46,7 +46,7 @@ The pi-sandbox is a Docker container that provides an isolated environment for r
 
 4. **Extension opt-in via `-ne`/`-e`**: Extensions are installed via npm into `.pi-sandbox/lib/node_modules/`, then symlinked into `.pi-sandbox/pi-extensions/` (the **catalog** of available extensions). The `pi-sandbox` script builds a `PI_ENABLED_EXTENSIONS` list from user flags and passes it to the container. The entrypoint then invokes `pi -ne -e <path>` for each enabled extension, so only explicitly opted-in extensions are loaded. **Do not add packages to `settings.json`** — control extension enablement via `pi-sandbox` flags.
 
-4. **Self-modification**: When launched with `--self-modify`, the sandbox source directory is mounted at `$HOME/.sandbox-source/` (read-write). The entrypoint auto-discovers the `self-modify-sandbox` skill from this mount.
+5. **Self-modification**: When launched with `--self-modify`, the sandbox source directory is mounted at `$HOME/.sandbox-source/` (read-write). The entrypoint auto-discovers the `self-modify-sandbox` skill from this mount.
 
 ## Making Permanent Changes
 
