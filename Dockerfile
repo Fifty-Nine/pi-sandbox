@@ -37,6 +37,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
         libffi-dev \
         liblzma-dev \
         libevent-dev \
+        openssh-client \
     && apt-get build-dep -y tmux \
     && rm -rf /var/lib/apt/lists/*
 

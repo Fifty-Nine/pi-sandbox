@@ -63,6 +63,8 @@ Runs the container with bind mounts so the agent sees the host project directory
 |---|---|---|
 | `$HOME/.pi` | `/home/<username>/.pi` | read-write |
 | `$PWD` | `/home/<username>/<relative>` | read-only (default), skipped with `--no-mount` |
+| `$HOME/.ssh` (if `--ssh`) | `/home/<username>/.ssh` | read-only |
+| SSH agent socket (if `--ssh`) | `/ssh-agent-socket/<basename>` | read-write (bind mount of socket directory) |
 | Sandbox source (if `--self-modify`) | `/home/<username>/.sandbox-source` | read-write |
 
 `/home/<username>/.agent-sandbox` is **not** mounted from the host. It is baked into the Docker image and is container-ephemeral: the agent can write to it freely during a session, but changes do not persist across container restarts.
@@ -87,9 +89,14 @@ Runs the container with bind mounts so the agent sees the host project directory
 ./sandbox -s
 ./sandbox --self-modify
 
+# SSH mode — forward SSH agent + mount ~/.ssh read-only for remote host access
+./sandbox -S
+./sandbox --ssh
+
 # Combine flags
 ./sandbox -s -w
 ./sandbox -s -x
+./sandbox -S -w
 
 # Override the container command
 ./sandbox -- bash
@@ -189,6 +196,44 @@ with a user-provided tmux session.
    packaged tmux (3.5a) uses an incompatible IPC protocol with tmux 3.6+ servers.
    If the host runs a newer tmux version, update the `TMUX_VERSION` build arg in
    the Dockerfile accordingly.
+
+## SSH Mode
+
+With `--ssh` (or `-S`), the sandbox forwards the host's SSH agent and mounts
+`~/.ssh` read-only, enabling the agent to connect to remote hosts via SSH.
+
+**What gets mounted/configured:**
+
+- The SSH agent socket directory is bind-mounted at `/ssh-agent-socket/` inside
+  the container, and `SSH_AUTH_SOCK` is set to point to the socket within it.
+  This allows the agent to use the host's `ssh-agent` for authentication.
+- `~/.ssh` from the host is mounted read-only at `/home/<username>/.ssh`,
+  providing access to `~/.ssh/config`, `~/.ssh/known_hosts`, and SSH keys
+  (though key authentication goes through the forwarded agent).
+
+**Limitations:**
+
+- Because `~/.ssh` is mounted read-only, connecting to a host for the first time
+  will fail if `StrictHostKeyChecking=yes` (the default) because the agent
+  cannot write to `~/.ssh/known_hosts`. You can work around this by:
+  - Pre-populating `known_hosts` on the host before launching the sandbox
+  - Setting `StrictHostKeyChecking=accept-new` or `no` in `~/.ssh/config` for
+    specific hosts
+- `ssh-agent` must be running and `SSH_AUTH_SOCK` must be set on the host.
+  The launch script validates this and exits with an error if the socket is
+  missing.
+- The container must have `openssh-client` installed (included in the image
+  by default).
+
+```bash
+# Basic SSH forwarding
+./sandbox -S
+
+# Combine with other flags
+./sandbox -S -w          # SSH + read-write mount
+./sandbox -S -s          # SSH + self-modify
+./sandbox -S --tmux      # SSH + tmux debug
+```
 
 ## Notes
 

@@ -15,11 +15,13 @@ SELF_MODIFY=false
 NO_MOUNT=false
 TMUX_MODE=false
 TMUX_SOCKET=""
+SSH_MODE=false
 
 while [[ $# -gt 0 ]]; do
     case "$1" in
         -w|--read-write) RW=true; shift ;;
         -s|--self-modify) SELF_MODIFY=true; shift ;;
+        -S|--ssh) SSH_MODE=true; shift ;;
         -x|--no-mount) NO_MOUNT=true; shift ;;
         --tmux)
             TMUX_MODE=true
@@ -46,6 +48,8 @@ while [[ $# -gt 0 ]]; do
             echo "  -w, --read-write    Mount the working directory read-write (default: read-only)"
             echo "  -x, --no-mount     Do not mount the working directory at all; the agent works"
             echo "                      from /home/<username> (read-write) instead"
+            echo "  -S, --ssh           Forward the host SSH agent and mount ~/.ssh read-only so the"
+            echo "                      agent can connect to remote hosts via SSH"
             echo "  -s, --self-modify   Mount the sandbox source directory read-write so the agent"
             echo "                      can modify the sandbox itself (Dockerfile, entrypoint, etc.)"
             echo "  --tmux [SOCKET]     Mount a tmux socket for the tmux debugging tool."
@@ -109,6 +113,27 @@ if $TMUX_MODE; then
         --mount "type=bind,source=$TMUX_SOCKET_DIR,target=/tmux-socket-dir"
         --env TMUX_SOCKET_PATH=$TMUX_MOUNTED_SOCKET_PATH
         --env TMUX_DEBUG_MODE=1
+    )
+fi
+
+# SSH mode: forward SSH agent socket and mount ~/.ssh read-only
+if $SSH_MODE; then
+    if [[ -z "${SSH_AUTH_SOCK:-}" ]]; then
+        echo "Error: SSH_AUTH_SOCK is not set. Is ssh-agent running?" >&2
+        exit 1
+    fi
+    if [[ ! -S "$SSH_AUTH_SOCK" ]]; then
+        echo "Error: SSH_AUTH_SOCK ($SSH_AUTH_SOCK) does not exist or is not a socket" >&2
+        exit 1
+    fi
+    SSH_AUTH_SOCK_REAL="$(readlink -f "$SSH_AUTH_SOCK")"
+    SSH_AUTH_SOCK_DIR="$(dirname "$SSH_AUTH_SOCK_REAL")"
+    SSH_AUTH_SOCK_BASE="$(basename "$SSH_AUTH_SOCK_REAL")"
+    SSH_MOUNTED_SOCK="/ssh-agent-socket/$SSH_AUTH_SOCK_BASE"
+    DOCKER_ARGS+=(
+        --mount "type=bind,source=$SSH_AUTH_SOCK_DIR,target=/ssh-agent-socket"
+        --env SSH_AUTH_SOCK=$SSH_MOUNTED_SOCK
+        --mount "type=bind,source=$HOME/.ssh,target=$CONTAINER_HOME/.ssh,readonly"
     )
 fi
 
