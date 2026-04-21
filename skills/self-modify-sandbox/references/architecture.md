@@ -24,13 +24,15 @@ The agent-sandbox is a Docker container that provides an isolated environment fo
 ├── .sandbox-source/          # Only present with --self-modify flag
 │   └── (sandbox repo files)  # Mounted read-write from host
 └── <project>/                # Working directory (mounted from host $PWD)
+                              #   Default: read-only | -w: read-write | -x: not mounted
+                              #   When not mounted, CWD falls back to /home/agent
 ```
 
 ## Key Design Decisions
 
 1. **Ephemeral `.agent-sandbox`**: Changes to `/home/agent/.agent-sandbox` do not persist across container restarts. Only changes to the Dockerfile and rebuilding the image make permanent changes.
 
-2. **Read-only default mount**: The working directory is read-only by default (`-w` for read-write). This prevents accidental host modifications.
+2. **Configurable CWD mount**: The working directory is read-only by default (`-w` for read-write). Use `--no-mount` (`-x`) to skip the CWD mount entirely — the agent works from `/home/agent` (read-write, image-baked) instead. This prevents accidental host modifications and provides an isolated scratch environment.
 
 3. **Pi packages via symlink farm**: Extensions are installed via npm into `.agent-sandbox/lib/node_modules/`, then symlinked into `.agent-sandbox/pi-extensions/`. The entrypoint script bridges these into `~/.pi/agent/extensions/` for pi auto-discovery. **Do not add packages to `settings.json`** — add them to the Dockerfile symlink farm.
 

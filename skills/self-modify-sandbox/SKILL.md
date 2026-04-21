@@ -26,7 +26,7 @@ All sandbox source files are at `/home/agent/.sandbox-source/`:
 | File | Purpose |
 |------|---------|
 | `Dockerfile` | Docker image definition (packages, users, env vars) |
-| `sandbox` | Host-side launch script (mounts, flags, Docker run) |
+| `sandbox` | Host-side launch script (mounts, flags, Docker run). CWD mount is optional (`--no-mount`) |
 | `entrypoint` | Container entrypoint (extension symlinks, CMD exec) |
 | `AGENTS.md` | Documentation for agents (you are reading a derivative of this) |
 | `skills/` | Pi skills bundled with the sandbox (including this one) |

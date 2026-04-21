@@ -36,7 +36,7 @@ Runs the container with bind mounts so the agent sees the host project directory
 | Host path | Container path | Mode |
 |---|---|---|
 | `$HOME/.pi` | `/home/agent/.pi` | read-write |
-| `$PWD` | `/home/agent/<relative>` | read-only (default) |
+| `$PWD` | `/home/agent/<relative>` | read-only (default), skipped with `--no-mount` |
 | Sandbox source (if `--self-modify`) | `/home/agent/.sandbox-source` | read-write |
 
 `/home/agent/.agent-sandbox` is **not** mounted from the host. It is baked into the Docker image and is container-ephemeral: the agent can write to it freely during a session, but changes do not persist across container restarts.
@@ -53,12 +53,17 @@ Runs the container with bind mounts so the agent sees the host project directory
 ./sandbox -w
 ./sandbox --read-write
 
+# No mount — skip CWD mount entirely; agent works in /home/agent (read-write)
+./sandbox -x
+./sandbox --no-mount
+
 # Self-modify mode — mount sandbox source + load self-modify skill
 ./sandbox -s
 ./sandbox --self-modify
 
 # Combine flags
 ./sandbox -s -w
+./sandbox -s -x
 
 # Override the container command
 ./sandbox -- bash
@@ -161,7 +166,7 @@ with a user-provided tmux session.
 
 ## Notes
 
-- The working directory mount is **read-only by default** to prevent unintended host modifications. Use `-w` only when you explicitly want the agent to write back to the host filesystem.
+- The working directory mount is **read-only by default** to prevent unintended host modifications. Use `-w` only when you explicitly want the agent to write back to the host filesystem. Use `--no-mount` (`-x`) to skip the CWD mount entirely — the agent's working directory falls back to `/home/agent`, which is read-write (baked into the image, not a host mount).
 - `$HOME/.pi` is always mounted read-write so the agent can persist config, history, and session state.
 - `/home/agent/.agent-sandbox` is baked into the Docker image (not a host mount). It is writable by the agent during a session but changes are **ephemeral** — they do not persist across container restarts.
 - `npm` is configured (via `NPM_CONFIG_PREFIX`) to install global packages into `/home/agent/.agent-sandbox`. This means `npm install -g` places modules in `/home/agent/.agent-sandbox/lib/node_modules/` and binaries in `/home/agent/.agent-sandbox/bin/` (which is on `PATH`).
