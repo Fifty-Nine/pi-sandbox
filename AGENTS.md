@@ -125,9 +125,15 @@ with a user-provided tmux session.
 
 - If no socket path is given and `$TMUX` is set, the socket is auto-detected from `$TMUX`
 - Otherwise defaults to `/tmp/tmux-$(id -u)/default`
-- The socket directory is bind-mounted at the same path inside the container
+- The socket's parent directory is bind-mounted at a fixed path (`/tmux-socket-dir/`)
+  inside the container, and `TMUX_SOCKET_PATH` points to the socket within it
 - `TMUX_SOCKET_PATH` env var is set so the `tmux` tool knows which socket to use
 - `TMUX_DEBUG_MODE=1` env var is set (reserved for future tool-restriction behavior)
+
+> **Why mount the directory, not the socket file?** Docker bind mounts of
+> individual Unix socket files don't reliably share the live socket inode — the
+> container sees a stale copy. Mounting the parent directory ensures the
+> container accesses the same live socket the host tmux server is bound to.
 
 ```bash
 # Auto-detect socket from current tmux session
@@ -140,9 +146,18 @@ with a user-provided tmux session.
 ./sandbox --tmux -w
 ```
 
-**Note:** The container agent runs as UID 1026. If the host tmux socket is owned
-by a different UID, the agent may not have permission to connect. In that case,
-adjust the socket directory permissions on the host (e.g., `chmod 777 /tmp/tmux-$(id -u)`).
+**Important compatibility notes:**
+
+1. **UID match:** The container agent runs as UID 1026. The tmux server checks
+   the connecting client's UID and rejects mismatches. The host tmux server must
+   be running as the same UID (1026). If the socket is owned by a different UID,
+   the agent cannot connect.
+
+2. **Tmux version:** The container builds tmux from source (currently 3.6) to
+   ensure protocol compatibility with the host tmux server. Debian Trixie's
+   packaged tmux (3.5a) uses an incompatible IPC protocol with tmux 3.6+ servers.
+   If the host runs a newer tmux version, update the `TMUX_VERSION` build arg in
+   the Dockerfile accordingly.
 
 ## Notes
 

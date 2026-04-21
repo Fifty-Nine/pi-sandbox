@@ -6,6 +6,7 @@ ENV DEBIAN_FRONTEND=noninteractive
 # -------------------------------------------------------------------
 # 1. Base packages + sudo (needed for passwordless sudo later)
 # -------------------------------------------------------------------
+RUN find /etc/apt/sources.list.d -type f -exec sed -i 's/Types: deb$/Types: deb deb-src/' {} +
 RUN apt-get update && apt-get install -y --no-install-recommends \
         git \
         build-essential \
@@ -24,8 +25,23 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
         libxmlsec1-dev \
         libffi-dev \
         liblzma-dev \
-        tmux \
+        libevent-dev \
+    && apt-get build-dep -y tmux \
     && rm -rf /var/lib/apt/lists/*
+
+# -------------------------------------------------------------------
+# 1b. Build tmux from source (Debian has 3.5a which is incompatible
+#     with tmux 3.6+ servers due to protocol changes)
+# -------------------------------------------------------------------
+ARG TMUX_VERSION=3.6a
+RUN cd /tmp \
+    && curl -fsSL "https://github.com/tmux/tmux/releases/download/${TMUX_VERSION}/tmux-${TMUX_VERSION}.tar.gz" | tar xz \
+    && cd "tmux-${TMUX_VERSION}" \
+    && ./configure \
+    && make -j"$(nproc)" \
+    && make install \
+    && cd / \
+    && rm -rf /tmp/tmux-${TMUX_VERSION}
 
 # -------------------------------------------------------------------
 # 2. pyenv + Python 3.13 (set as default)

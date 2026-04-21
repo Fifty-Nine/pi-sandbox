@@ -83,9 +83,10 @@ if $TMUX_MODE; then
         exit 1
     fi
     TMUX_SOCKET_DIR=$(dirname "$TMUX_SOCKET")
+    TMUX_MOUNTED_SOCKET_PATH=/tmux-socket-dir/$(basename "$TMUX_SOCKET")
     DOCKER_ARGS+=(
-        --mount "type=bind,source=$TMUX_SOCKET_DIR,target=$TMUX_SOCKET_DIR"
-        --env TMUX_SOCKET_PATH=$TMUX_SOCKET
+        --mount "type=bind,source=$TMUX_SOCKET_DIR,target=/tmux-socket-dir"
+        --env TMUX_SOCKET_PATH=$TMUX_MOUNTED_SOCKET_PATH
         --env TMUX_DEBUG_MODE=1
     )
 fi
