@@ -1,34 +1,118 @@
 #!/bin/bash
 set -e
 
+# ---------------------------------------------------------------------------
+# Pi agent dir overlay
+#
+# The host's ~/.pi is mounted read-write, but we don't want the sandbox to
+# read the user's settings.json (which may reference packages not installed
+# in the container image) or to pollute the user's extensions/ directory.
+#
+# We build a shadow agent dir at ~/.pi-sandbox/pi-agent/ that:
+#   - Has its own settings.json with the packages list cleared, so pi
+#     doesn't try to install the user's host packages inside the container
+#   - Has its own extensions/ dir where the entrypoint writes sandbox
+#     extension symlinks (instead of writing into the host's extensions/)
+#   - Symlinks everything else (auth.json, models.json, sessions/, bin/,
+#     skills/, prompts/, themes/, keybindings.json) back to the real
+#     ~/.pi/agent/ so the agent can read credentials, history, and skills,
+#     and so new sessions written by the agent persist to the host
+#
+# PI_CODING_AGENT_DIR points pi at the shadow dir instead of ~/.pi/agent/.
+# ---------------------------------------------------------------------------
+
+HOST_AGENT_DIR="$HOME/.pi/agent"
+SHADOW_AGENT_DIR="$HOME/.pi-sandbox/pi-agent"
+
+mkdir -p "$SHADOW_AGENT_DIR"
+
+# settings.json: copy from host but strip the packages list so pi doesn't
+# try to install host packages (pi-web-access, etc.) inside the container.
+HOST_SETTINGS="$HOST_AGENT_DIR/settings.json"
+SHADOW_SETTINGS="$SHADOW_AGENT_DIR/settings.json"
+if [ -f "$HOST_SETTINGS" ]; then
+    # Remove the packages key using python (available via pyenv).
+    python3 -c "
+import json, sys
+with open(sys.argv[1]) as f:
+    s = json.load(f)
+s.pop('packages', None)
+print(json.dumps(s, indent=2))
+" "$HOST_SETTINGS" > "$SHADOW_SETTINGS"
+else
+    echo '{}' > "$SHADOW_SETTINGS"
+fi
+
+# Symlink everything else back to the real agent dir so pi can read
+# credentials, session history, skills, binaries, etc., and so new
+# sessions written during this run persist to the host filesystem.
+for name in auth.json models.json sessions bin skills prompts themes keybindings.json; do
+    src="$HOST_AGENT_DIR/$name"
+    dst="$SHADOW_AGENT_DIR/$name"
+    # Only symlink if the source exists and the destination isn't already
+    # a real file/dir we created above (i.e. settings.json).
+    if [ -e "$src" ] && [ ! -e "$dst" ]; then
+        ln -sfn "$src" "$dst"
+    fi
+done
+
+# extensions/: create a real writable dir in the shadow (not a symlink to
+# the host) so the entrypoint can write sandbox-specific symlinks without
+# touching the host's ~/.pi/agent/extensions/.
+EXT_DIR="$SHADOW_AGENT_DIR/extensions"
+mkdir -p "$EXT_DIR"
+
+# ---------------------------------------------------------------------------
 # Self-modification support:
 # If SANDBOX_SELF_MODIFY=1, the sandbox source is mounted at
-# $HOME/.sandbox-source. Symlink any skills from there
-# into ~/.pi/agent/skills/ for auto-discovery.
+# $HOME/.sandbox-source. Symlink any skills from there into the shadow
+# agent's skills/ dir for auto-discovery.
+# ---------------------------------------------------------------------------
 SANDBOX_SRC="$HOME/.sandbox-source"
 if [[ "${SANDBOX_SELF_MODIFY:-0}" == "1" && -d "$SANDBOX_SRC/skills" ]]; then
-    SKILL_DIR="$HOME/.pi/agent/skills"
-    mkdir -p "$SKILL_DIR"
+    SKILL_DIR="$SHADOW_AGENT_DIR/skills"
+    # skills/ may currently be a symlink to the host dir; replace it with
+    # a real dir that contains symlinks to both the host skills and the
+    # sandbox source skills.
+    if [ -L "$SKILL_DIR" ]; then
+        HOST_SKILLS=$(readlink -f "$SKILL_DIR")
+        rm "$SKILL_DIR"
+        mkdir -p "$SKILL_DIR"
+        # Re-symlink host skills into the new real dir
+        if [ -d "$HOST_SKILLS" ]; then
+            for skill in "$HOST_SKILLS"/*/; do
+                [ -d "$skill" ] || continue
+                name=$(basename "$skill")
+                ln -sfn "$skill" "$SKILL_DIR/$name"
+            done
+        fi
+    else
+        mkdir -p "$SKILL_DIR"
+    fi
+    # Symlink sandbox source skills on top
     for skill in "$SANDBOX_SRC/skills"/*/; do
+        [ -d "$skill" ] || continue
         name=$(basename "$skill")
         ln -sfn "$SANDBOX_SRC/skills/$name" "$SKILL_DIR/$name"
     done
 fi
 
-# Create extension symlinks in ~/.pi/agent/extensions/ for pi auto-discovery.
-# Each subdirectory in $HOME/.pi-sandbox/pi-extensions/ is symlinked.
-EXT_DIR="$HOME/.pi/agent/extensions"
+# ---------------------------------------------------------------------------
+# Extension symlinks: populate shadow extensions/ with symlinks to the
+# sandbox's installed pi packages (from the pi-extensions symlink farm).
+# ---------------------------------------------------------------------------
 SRC_DIR="$HOME/.pi-sandbox/pi-extensions"
-
 if [ -d "$SRC_DIR" ]; then
-    mkdir -p "$EXT_DIR"
     for entry in "$SRC_DIR"/*; do
         name=$(basename "$entry")
-        # Resolve to actual target (in case entry itself is a symlink)
         resolved=$(readlink -f "$entry")
-        target="$EXT_DIR/$name"
-        ln -sfn "$resolved" "$target"
+        ln -sfn "$resolved" "$EXT_DIR/$name"
     done
 fi
+
+# ---------------------------------------------------------------------------
+# Point pi at the shadow agent dir instead of ~/.pi/agent/.
+# ---------------------------------------------------------------------------
+export PI_CODING_AGENT_DIR="$SHADOW_AGENT_DIR"
 
 exec "$@"

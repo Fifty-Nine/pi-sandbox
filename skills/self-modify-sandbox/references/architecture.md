@@ -16,10 +16,19 @@ The pi-sandbox is a Docker container that provides an isolated environment for r
 ```
 /home/<username>/             # $HOME (username configurable at build time)
 ├── .pi/                      # Mounted from host $HOME/.pi (read-write)
-├── .pi-sandbox/           # Baked into image (ephemeral across restarts)
+├── .pi-sandbox/              # Baked into image (ephemeral across restarts)
 │   ├── bin/                  # npm global binaries (on PATH)
 │   ├── lib/node_modules/     # npm global packages
-│   └── pi-extensions/        # Symlink farm → node_modules packages
+│   ├── pi-extensions/        # Symlink farm → node_modules packages
+│   └── pi-agent/             # Shadow agent dir (built by entrypoint at startup)
+│       ├── settings.json     # Host settings.json with packages[] stripped
+│       ├── extensions/       # Sandbox-only extension symlinks
+│       ├── auth.json        -> ~/.pi/agent/auth.json      (symlink)
+│       ├── models.json      -> ~/.pi/agent/models.json    (symlink)
+│       ├── sessions/        -> ~/.pi/agent/sessions/      (symlink, persists to host)
+│       ├── bin/             -> ~/.pi/agent/bin/           (symlink)
+│       ├── skills/          -> ~/.pi/agent/skills/        (symlink)
+│       └── prompts/         -> ~/.pi/agent/prompts/       (symlink)
 ├── .sandbox-source/          # Only present with --self-modify flag
 │   └── (sandbox repo files)  # Mounted read-write from host
 └── <project>/                # Working directory (mounted from host $PWD)
@@ -31,7 +40,9 @@ The pi-sandbox is a Docker container that provides an isolated environment for r
 
 1. **Ephemeral `.pi-sandbox`**: Changes to `$HOME/.pi-sandbox` do not persist across container restarts. Only changes to the Dockerfile and rebuilding the image make permanent changes.
 
-2. **Configurable CWD mount**: The working directory is read-only by default (`-w` for read-write). Use `--no-mount` (`-x`) to skip the CWD mount entirely — the agent works from `/home/<username>` (read-write, image-baked) instead. This prevents accidental host modifications and provides an isolated scratch environment.
+2. **Shadow agent dir (`PI_CODING_AGENT_DIR`)**: The entrypoint builds `~/.pi-sandbox/pi-agent/` at startup and sets `PI_CODING_AGENT_DIR` to point pi there. This prevents the host's `settings.json` (which may list packages not installed in the container) from triggering npm installs on every launch, and prevents sandbox extension symlinks from polluting the host's `~/.pi/agent/extensions/`. Everything the agent needs to read from the host (credentials, sessions, skills) is symlinked back from the shadow dir.
+
+3. **Configurable CWD mount**: The working directory is read-only by default (`-w` for read-write). Use `--no-mount` (`-x`) to skip the CWD mount entirely — the agent works from `/home/<username>` (read-write, image-baked) instead. This prevents accidental host modifications and provides an isolated scratch environment.
 
 3. **Pi packages via symlink farm**: Extensions are installed via npm into `.pi-sandbox/lib/node_modules/`, then symlinked into `.pi-sandbox/pi-extensions/`. The entrypoint script bridges these into `~/.pi/agent/extensions/` for pi auto-discovery. **Do not add packages to `settings.json`** — add them to the Dockerfile symlink farm.
 

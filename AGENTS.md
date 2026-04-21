@@ -76,13 +76,21 @@ on the host). This means bind-mounted files are always owned by the correct host
 
 | Host path | Container path | Mode |
 |---|---|---|
-| `$HOME/.pi` | `/home/<username>/.pi` | read-write |
+| `$HOME/.pi` | `/home/<username>/.pi` | read-write |  |
 | `$PWD` | `/home/<username>/<relative>` | read-only (default), skipped with `--no-mount` |
 | `$HOME/.ssh` (if `--ssh`) | `/home/<username>/.ssh` | read-only |
 | SSH agent socket (if `--ssh`) | `/ssh-agent-socket/<basename>` | read-write (bind mount of socket directory) |
 | Sandbox source (if `--self-modify`) | `/home/<username>/.sandbox-source` | read-write |
 
-`/home/<username>/.pi-sandbox` is **not** mounted from the host. It is baked into the Docker image and is container-ephemeral: the agent can write to it freely during a session, but changes do not persist across container restarts.
+`/home/<username>/.pi-sandbox` is **not** mounted from the host. It is baked into the container image and is container-ephemeral: the agent can write to it freely during a session, but changes do not persist across container restarts.
+
+
+The entrypoint builds a shadow agent dir at `/home/<username>/.pi-sandbox/pi-agent/` and
+sets `PI_CODING_AGENT_DIR` to point pi there instead of `~/.pi/agent/`. The shadow dir
+has its own `settings.json` (host settings with `packages` stripped) and `extensions/`
+(sandbox-only symlinks), while everything else — `auth.json`, `sessions/`, `bin/`,
+`skills/`, `models.json` — is symlinked back to the real `~/.pi/agent/` so credentials,
+session history, and skills remain accessible and new sessions persist to the host.
 
 `$PWD` is remapped by replacing the `$HOME` prefix with `/home/<username>`. For example, if you are in `/home/princet/my-project` and the sandbox user is `alice`, it mounts at `/home/alice/my-project`, and the agent's working directory is set there.
 
