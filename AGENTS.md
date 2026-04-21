@@ -7,7 +7,7 @@ A Docker-based sandbox for running `pi-coding-agent` in an isolated environment.
 | File | Purpose |
 |---|---|
 | `Dockerfile` | Builds the `agent-sandbox` image (Debian Trixie, pyenv/Python 3.13, Node 22, pi-coding-agent) |
-| `sandbox` | Launch script that mounts config + working directory into the container |
+| `pi-sandbox` | Launch script that mounts config + working directory into the container |
 | `entrypoint` | Container entrypoint: sets up extension symlinks, skill symlinks, then execs CMD |
 | `AGENTS.md` | This file |
 | `skills/self-modify-sandbox/` | Pi skill for sandbox self-modification (loaded when `--self-modify` is active) |
@@ -23,17 +23,17 @@ A Docker-based sandbox for running `pi-coding-agent` in an isolated environment.
 
 ### Build
 
-The `build` script accepts options to customize the sandbox user to match the host user, ensuring correct file ownership for bind mounts:
+The `pi-build-sandbox` script accepts options to customize the sandbox user to match the host user, ensuring correct file ownership for bind mounts:
 
 ```bash
 # Default: use the current host user's UID, GID, username, and group name
-./build
+./pi-build-sandbox
 
 # Customize the sandbox user
-./build --uid 1000 --gid 1000 --username alice --groupname alice
+./pi-build-sandbox --uid 1000 --gid 1000 --username alice --groupname alice
 
 # Show help
-./build --help
+./pi-build-sandbox --help
 ```
 
 | Option | Default | Description |
@@ -43,9 +43,9 @@ The `build` script accepts options to customize the sandbox user to match the ho
 | `--username` | `$(id -un)` | Username inside the container |
 | `--groupname` | `$(id -gn)` | Group name inside the container |
 
-These values are passed as Docker `--build-arg`s and baked into the image. The username is also stored as a Docker label (`sandbox.user`) so the `sandbox` launch script can auto-detect it.
+These values are passed as Docker `--build-arg`s and baked into the image. The username is also stored as a Docker label (`sandbox.user`) so the `pi-sandbox` launch script can auto-detect it.
 
-You can also invoke `docker build` directly with the build args:
+Under the hood, `pi-build-sandbox` passes these values as Docker `--build-arg`s. You can also invoke `docker build` directly if needed:
 
 ```bash
 docker build --build-arg SANDBOX_UID=1000 --build-arg SANDBOX_GID=1000 \
@@ -53,7 +53,7 @@ docker build --build-arg SANDBOX_UID=1000 --build-arg SANDBOX_GID=1000 \
              -t agent-sandbox .
 ```
 
-## Launch Script (`sandbox`)
+## Launch Script (`pi-sandbox`)
 
 Runs the container with bind mounts so the agent sees the host project directory and your pi configuration.
 
@@ -75,32 +75,32 @@ Runs the container with bind mounts so the agent sees the host project directory
 
 ```bash
 # Read-only mount (default) — agent can read but not modify your files
-./sandbox
+./pi-sandbox
 
 # Read-write mount — agent can modify files in the working directory
-./sandbox -w
-./sandbox --read-write
+./pi-sandbox -w
+./pi-sandbox --read-write
 
 # No mount — skip CWD mount entirely; agent works in /home/<username> (read-write)
-./sandbox -x
-./sandbox --no-mount
+./pi-sandbox -x
+./pi-sandbox --no-mount
 
 # Self-modify mode — mount sandbox source + load self-modify skill
-./sandbox -s
-./sandbox --self-modify
+./pi-sandbox -s
+./pi-sandbox --self-modify
 
 # SSH mode — forward SSH agent + mount ~/.ssh read-only for remote host access
-./sandbox -S
-./sandbox --ssh
+./pi-sandbox -S
+./pi-sandbox --ssh
 
 # Combine flags
-./sandbox -s -w
-./sandbox -s -x
-./sandbox -S -w
+./pi-sandbox -s -w
+./pi-sandbox -s -x
+./pi-sandbox -S -w
 
 # Override the container command
-./sandbox -- bash
-./sandbox -w -- bash
+./pi-sandbox -- bash
+./pi-sandbox -w -- bash
 ```
 
 ## Pi Package Extensions
@@ -149,11 +149,11 @@ The skill provides:
 - Awareness of all sandbox source files and their purposes
 - Validation scripts (`scripts/validate.sh`) to check edits before rebuild
 - Status/diff scripts to review changes
-- Instructions to notify the user that a `docker build` is needed on the host
+- Instructions to notify the user that a rebuild is needed on the host
 
 The agent **cannot rebuild the Docker image** from inside the container
 (Docker socket is not mounted for security). After making changes, the agent
-should tell the user to run `docker build -t agent-sandbox .` on the host.
+should tell the user to run `./pi-build-sandbox` on the host.
 
 ## Tmux Debug Mode
 
@@ -175,13 +175,13 @@ with a user-provided tmux session.
 
 ```bash
 # Auto-detect socket from current tmux session
-./sandbox --tmux
+./pi-sandbox --tmux
 
 # Specify socket explicitly
-./sandbox --tmux /tmp/tmux-1000/default
+./pi-sandbox --tmux /tmp/tmux-1000/default
 
 # Combine with other flags
-./sandbox --tmux -w
+./pi-sandbox --tmux -w
 ```
 
 **Important compatibility notes:**
@@ -225,11 +225,11 @@ a remote machine you can SSH into.
 
 ```bash
 # SSH tmux mode — proxy tmux tool to remote host
-./sandbox -S --tmux-ssh d-ubuntu-44
+./pi-sandbox -S --tmux-ssh d-ubuntu-44
 
 # Combine with other flags
-./sandbox -S --tmux-ssh d-ubuntu-44 -w
-./sandbox -S --tmux-ssh d-ubuntu-44 -s
+./pi-sandbox -S --tmux-ssh d-ubuntu-44 -w
+./pi-sandbox -S --tmux-ssh d-ubuntu-44 -s
 ```
 
 **Error handling:** The tmux tool distinguishes SSH errors (connection
@@ -271,13 +271,13 @@ With `--ssh` (or `-S`), the sandbox forwards the host's SSH agent and mounts
 
 ```bash
 # Basic SSH forwarding
-./sandbox -S
+./pi-sandbox -S
 
 # Combine with other flags
-./sandbox -S -w          # SSH + read-write mount
-./sandbox -S -s          # SSH + self-modify
-./sandbox -S --tmux          # SSH + local tmux debug
-./sandbox -S --tmux-ssh host # SSH + remote tmux over SSH
+./pi-sandbox -S -w          # SSH + read-write mount
+./pi-sandbox -S -s          # SSH + self-modify
+./pi-sandbox -S --tmux          # SSH + local tmux debug
+./pi-sandbox -S --tmux-ssh host # SSH + remote tmux over SSH
 ```
 
 ## Notes

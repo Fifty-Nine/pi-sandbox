@@ -7,7 +7,7 @@ The agent-sandbox is a Docker container that provides an isolated environment fo
 | File | Purpose |
 |------|---------|
 | `Dockerfile` | Builds the `agent-sandbox` image (Debian Trixie, Python 3.13, Node 22, pi) |
-| `sandbox` | Host-side launch script: mounts config + working directory into the container |
+| `pi-sandbox` | Host-side launch script: mounts config + working directory into the container |
 | `entrypoint` | Container startup: symlinks pi extensions into `~/.pi/agent/extensions/` |
 | `AGENTS.md` | Documentation for agents about the sandbox environment |
 
@@ -44,7 +44,7 @@ Since `.agent-sandbox` is ephemeral, the only way to make changes that survive c
 1. Edit files in `$HOME/.sandbox-source/`
 2. Tell the user to rebuild the Docker image on the host:
    ```
-   docker build -t agent-sandbox /path/to/agent-sandbox/
+   ./pi-build-sandbox
    ```
 
 ## Adding a Pi Package (Extension/Skill)
@@ -56,4 +56,4 @@ Since `.agent-sandbox` is ephemeral, the only way to make changes that survive c
            /home/${SANDBOX_USER}/.agent-sandbox/pi-extensions/<package>
    ```
 3. Update `AGENTS.md` with the new package info
-4. User must rebuild: `docker build -t agent-sandbox .`
+4. User must rebuild: `./pi-build-sandbox`

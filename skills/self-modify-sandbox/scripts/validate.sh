@@ -12,8 +12,8 @@ if [[ ! -f "$SANDBOX_SRC/Dockerfile" ]]; then
 fi
 
 # Check sandbox script exists
-if [[ ! -f "$SANDBOX_SRC/sandbox" ]]; then
-    echo "ERROR: sandbox script not found at $SANDBOX_SRC/sandbox"
+if [[ ! -f "$SANDBOX_SRC/pi-sandbox" ]]; then
+    echo "ERROR: pi-sandbox script not found at $SANDBOX_SRC/pi-sandbox"
     errors=$((errors + 1))
 fi
 
@@ -57,15 +57,15 @@ if [[ -f "$SANDBOX_SRC/entrypoint" ]] && [[ ! -x "$SANDBOX_SRC/entrypoint" ]]; t
 fi
 
 # Check sandbox script is executable
-if [[ -f "$SANDBOX_SRC/sandbox" ]] && [[ ! -x "$SANDBOX_SRC/sandbox" ]]; then
-    echo "WARNING: sandbox script is not executable"
+if [[ -f "$SANDBOX_SRC/pi-sandbox" ]] && [[ ! -x "$SANDBOX_SRC/pi-sandbox" ]]; then
+    echo "WARNING: pi-sandbox script is not executable"
 fi
 
 if [[ $errors -eq 0 ]]; then
     echo "✓ All validation checks passed"
     echo ""
     echo "Remember: changes require a Docker image rebuild on the host:"
-    echo "  cd $SANDBOX_SRC && ./build"
+    echo "  cd $SANDBOX_SRC && ./pi-build-sandbox"
 else
     echo "✗ $errors error(s) found"
     exit 1

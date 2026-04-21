@@ -21,7 +21,7 @@ Requires `--ssh` for SSH agent forwarding.
 
 ```bash
 # Example: SSH to d-ubuntu-44 with SSH auth
-./sandbox -S --tmux-ssh d-ubuntu-44
+./pi-sandbox -S --tmux-ssh d-ubuntu-44
 ```
 
 **SSH error handling:** If an SSH connection error occurs, the tool reports it as an `SSH error:` (vs `tmux error:`). The `waitForCompletion` polling loop automatically retries on transient SSH errors. With `ControlMaster=auto`, transient failures self-heal — the next SSH call creates a fresh connection.

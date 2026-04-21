@@ -17,7 +17,7 @@ echo $SANDBOX_SELF_MODIFY  # should be "1"
 ls $HOME/.sandbox-source/Dockerfile  # should exist
 ```
 
-If these aren't set, the user must relaunch with `./sandbox --self-modify`.
+If these aren't set, the user must relaunch with `./pi-sandbox --self-modify`.
 
 ## Sandbox Source Location
 
@@ -26,7 +26,7 @@ All sandbox source files are at `$HOME/.sandbox-source/`:
 | File | Purpose |
 |------|---------|
 | `Dockerfile` | Docker image definition (packages, users, env vars) |
-| `sandbox` | Host-side launch script (mounts, flags, Docker run). CWD mount is optional (`--no-mount`) |
+| `pi-sandbox` | Host-side launch script (mounts, flags, Docker run). CWD mount is optional (`--no-mount`) |
 | `entrypoint` | Container entrypoint (extension symlinks, CMD exec) |
 | `AGENTS.md` | Documentation for agents (you are reading a derivative of this) |
 | `skills/` | Pi skills bundled with the sandbox (including this one) |
@@ -51,7 +51,7 @@ Use `edit` or `write` on files under `$HOME/.sandbox-source/`.
 # Add to the pi-extensions section
 ```
 
-**sandbox** — Change host-side launch behavior, add mount flags:
+**pi-sandbox** — Change host-side launch behavior, add mount flags:
 ```bash
 # Example: Add a new mount or flag
 # Edit the docker run invocation
@@ -86,10 +86,10 @@ After making changes, inform the user:
 > I've modified the sandbox source files. To apply changes, rebuild the Docker image on your host:
 >
 > ```bash
-> docker build -t agent-sandbox /path/to/agent-sandbox/
+> ./pi-build-sandbox
 > ```
 >
-> Then restart the sandbox with `./sandbox --self-modify`.
+> Then restart the sandbox with `./pi-sandbox --self-modify`.
 
 ## Important Constraints
 
