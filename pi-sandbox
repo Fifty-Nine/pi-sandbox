@@ -162,7 +162,7 @@ fi
 
 # Build PI_ENABLED_EXTENSIONS from the accumulated list.
 # --no-ask-user / --no-searxng remove individual defaults.
-for REMOVE_EXT in ${NO_ASK_USER:+pi-ask-user} ${NO_SEARXNG:+pi-searxng}; do
+for REMOVE_EXT in $([[ "$NO_ASK_USER" == true ]] && echo pi-ask-user) $([[ "$NO_SEARXNG" == true ]] && echo pi-searxng); do
     FILTERED=()
     for ext in "${ENABLED_EXTENSIONS[@]}"; do
         if [ "$ext" != "$REMOVE_EXT" ]; then
