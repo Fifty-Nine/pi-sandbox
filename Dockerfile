@@ -108,17 +108,24 @@ ENV PATH="/home/${SANDBOX_USER}/.pi-sandbox/bin:${PATH}"
 # 8. Install pi-coding-agent globally (as sandbox user so files are owned by them)
 # -------------------------------------------------------------------
 USER ${SANDBOX_USER}
-RUN npm install -g @mariozechner/pi-coding-agent pi-ask-user
+RUN npm install -g @mariozechner/pi-coding-agent pi-ask-user pi-searxng
 
 # Create pi-extensions symlink farm (used by entrypoint to discover packages)
 # Adding a new package = add symlink here + update entrypoint script
 RUN mkdir -p /home/${SANDBOX_USER}/.pi-sandbox/pi-extensions \
  && ln -s /home/${SANDBOX_USER}/.pi-sandbox/lib/node_modules/pi-ask-user \
-         /home/${SANDBOX_USER}/.pi-sandbox/pi-extensions/pi-ask-user
+         /home/${SANDBOX_USER}/.pi-sandbox/pi-extensions/pi-ask-user \
+ && ln -s /home/${SANDBOX_USER}/.pi-sandbox/lib/node_modules/pi-searxng \
+         /home/${SANDBOX_USER}/.pi-sandbox/pi-extensions/pi-searxng
 
 # -------------------------------------------------------------------
 # 8b. Install local pi packages
 # -------------------------------------------------------------------
+# Overlay patched pi-searxng index.ts on top of the npm-installed version.
+# The npm install in step 8 resolves all dependencies; this COPY overwrites
+# only the patched source file with our fix (prepending page title to content).
+COPY --chown=${SANDBOX_USER}:${SANDBOX_GROUP} packages/pi-searxng/index.ts /home/${SANDBOX_USER}/.pi-sandbox/lib/node_modules/pi-searxng/index.ts
+
 COPY --chown=${SANDBOX_USER}:${SANDBOX_GROUP} packages/pi-tmux-debug /home/${SANDBOX_USER}/.pi-sandbox/pkg-src/pi-tmux-debug
 RUN npm install -g /home/${SANDBOX_USER}/.pi-sandbox/pkg-src/pi-tmux-debug \
  && ln -s /home/${SANDBOX_USER}/.pi-sandbox/lib/node_modules/pi-tmux-debug \

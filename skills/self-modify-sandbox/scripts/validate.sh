@@ -2,7 +2,7 @@
 # Validate the sandbox Dockerfile and entrypoint for common issues.
 set -euo pipefail
 
-SANDBOX_SRC="${SANDBOX_SRC:-/home/agent/.sandbox-source}"
+SANDBOX_SRC="${SANDBOX_SRC:-${SANDBOX_SOURCE_DIR:-$HOME/.sandbox-source}}"
 errors=0
 
 # Check Dockerfile exists

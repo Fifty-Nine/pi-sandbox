@@ -8,7 +8,7 @@ The pi-sandbox is a Docker container that provides an isolated environment for r
 |------|---------|
 | `Dockerfile` | Builds the `pi-sandbox` image (Debian Trixie, Python 3.13, Node 22, pi) |
 | `pi-sandbox` | Host-side launch script: mounts config + working directory into the container |
-| `entrypoint` | Container startup: symlinks pi extensions into `~/.pi/agent/extensions/` |
+| `entrypoint` | Container startup: constructs `pi -ne -e <path> ...` from `PI_ENABLED_EXTENSIONS`, symlinks self-modify skills |
 | `AGENTS.md` | Documentation for agents about the sandbox environment |
 
 ## Directory Layout (inside container)
@@ -44,7 +44,7 @@ The pi-sandbox is a Docker container that provides an isolated environment for r
 
 3. **Configurable CWD mount**: The working directory is read-only by default (`-w` for read-write). Use `--no-mount` (`-x`) to skip the CWD mount entirely — the agent works from `/home/<username>` (read-write, image-baked) instead. This prevents accidental host modifications and provides an isolated scratch environment.
 
-3. **Pi packages via symlink farm**: Extensions are installed via npm into `.pi-sandbox/lib/node_modules/`, then symlinked into `.pi-sandbox/pi-extensions/`. The entrypoint script bridges these into `~/.pi/agent/extensions/` for pi auto-discovery. **Do not add packages to `settings.json`** — add them to the Dockerfile symlink farm.
+4. **Extension opt-in via `-ne`/`-e`**: Extensions are installed via npm into `.pi-sandbox/lib/node_modules/`, then symlinked into `.pi-sandbox/pi-extensions/` (the **catalog** of available extensions). The `pi-sandbox` script builds a `PI_ENABLED_EXTENSIONS` list from user flags and passes it to the container. The entrypoint then invokes `pi -ne -e <path>` for each enabled extension, so only explicitly opted-in extensions are loaded. **Do not add packages to `settings.json`** — control extension enablement via `pi-sandbox` flags.
 
 4. **Self-modification**: When launched with `--self-modify`, the sandbox source directory is mounted at `$HOME/.sandbox-source/` (read-write). The entrypoint auto-discovers the `self-modify-sandbox` skill from this mount.
 
@@ -66,5 +66,10 @@ Since `.pi-sandbox` is ephemeral, the only way to make changes that survive cont
    && ln -s /home/${SANDBOX_USER}/.pi-sandbox/lib/node_modules/<package> \
            /home/${SANDBOX_USER}/.pi-sandbox/pi-extensions/<package>
    ```
-3. Update `AGENTS.md` with the new package info
-4. User must rebuild: `./pi-build-sandbox`
+3. Add a flag in `pi-sandbox` that appends the extension name to `ENABLED_EXTENSIONS`
+   (e.g., `ENABLED_EXTENSIONS+=(pi-my-new-ext)`) and add the flag to the `--help` text
+4. Update `AGENTS.md` with the new package info and flag mapping
+5. User must rebuild: `./pi-build-sandbox`
+
+No entrypoint changes are needed — it generically resolves extension names from
+`PI_ENABLED_EXTENSIONS` to paths in `~/.pi-sandbox/pi-extensions/`.
