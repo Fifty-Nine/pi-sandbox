@@ -147,22 +147,6 @@ export default function (pi: ExtensionAPI) {
     }
   });
 
-  pi.registerTool({
-    name: "get_search_results",
-    label: "Get Search Results",
-    description: "Retrieve previous search results by ID",
-    parameters: Type.Object({
-      searchId: Type.String()
-    }),
-    
-    async execute(_id, params) {
-      const cached = searchCache.get(params.searchId);
-      if (!cached) {
-        return { content: [{ type: "text", text: "Search not found" }] };
-      }
-      return {
-        content: [{ type: "text", text: `Query: "${cached.query}"\n\n${formatSearchResults(cached.results)}` }]
-      };
-    }
-  });
+  // get_search_results disabled: searchId is only returned in details (TUI metadata),
+  // not in the text content the agent sees, making the tool unusable by agents.
 }
