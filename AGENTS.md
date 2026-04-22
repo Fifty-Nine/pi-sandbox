@@ -7,6 +7,7 @@ A Podman-based sandbox for running `pi-coding-agent` in an isolated environment.
 | File | Purpose |
 |---|---|
 | `Dockerfile` | Builds the `pi-sandbox` image (Debian Trixie, pyenv/Python 3.13, Node 22, pi-coding-agent) |
+| `package.json` | Pinned npm dependencies for the image. Changing a version here invalidates the Docker build cache for the npm install layer, triggering a fresh install. |
 | `pi-sandbox` | Launch script that mounts config + working directory into the container |
 | `entrypoint` | Container entrypoint: sets up extension symlinks, skill symlinks, then execs CMD |
 | `AGENTS.md` | This file |
@@ -30,7 +31,8 @@ daemon, docker-compose stacks, or Docker images.
 - **Base:** `debian:trixie-slim`
 - **Languages:** Python 3.13 (via pyenv), Node.js 22 (via NodeSource)
 - **User:** Configurable at build time (defaults to the building user's UID/GID/name). Inside the container, the home directory is `/home/<username>/.pi-sandbox`. See **Build** below.
-- **npm global prefix:** `/home/<username>/.pi-sandbox` (global modules installed there)
+- **npm packages:** Installed via `package.json` into `/home/<username>/.pi-sandbox/npm-packages/node_modules/` (see **npm Package Management** below)
+- **npm global prefix:** `/home/<username>/.pi-sandbox` (for any `npm install -g` during runtime; used by local packages like `pi-tmux-debug`)
 - **Entry command:** `pi` (from `@mariozechner/pi-coding-agent`)
 
 ### Build
@@ -203,7 +205,7 @@ Current packages:
 To add a new pi package to the sandbox:
 
 1. **Install the package** in the Dockerfile:
-   - For **npm packages**: add `npm install -g <package>` and a symlink line to Dockerfile step 8
+   - For **npm packages**: add the package with a pinned version to `package.json` `dependencies`, and add a symlink line to Dockerfile step 8
    - For **local packages** (in `packages/`): add COPY + `npm install -g` + symlink to Dockerfile (see step 8b)
 2. **Add a flag** in `pi-sandbox` that appends the extension name to `ENABLED_EXTENSIONS`
    (e.g., `ENABLED_EXTENSIONS+=(pi-my-new-ext)`) and add the flag to the `--help` text
@@ -212,6 +214,20 @@ To add a new pi package to the sandbox:
 
 No entrypoint changes are needed — it generically resolves extension names from
 `PI_ENABLED_EXTENSIONS` to paths in `~/.pi-sandbox/pi-extensions/`.
+
+### Updating npm Package Versions
+
+npm packages are installed from `package.json` (not `npm install -g`). Pin exact versions
+in `package.json` dependencies — when a version changes, the `COPY package.json` Dockerfile
+step produces a different layer, which invalidates the cache for the `npm install` step
+and all subsequent layers. This is the standard Docker cache-busting pattern.
+
+To update a package:
+1. Change the version in `package.json`
+2. Rebuild the image (`./pi-build-sandbox`)
+
+Only the npm install layer (and layers after it) are rebuilt — earlier layers (apt, pyenv,
+Node.js, etc.) remain cached.
 
 ## Self-Modification
 
@@ -363,7 +379,7 @@ With `--ssh` (or `-S`), the sandbox forwards the host's SSH agent and mounts
   UID/GID to the same values inside the container. This requires that the image was built with
   the same UID/GID as the host user running the sandbox (the `pi-build-sandbox` default).
 - `/home/<username>/.pi-sandbox` is baked into the container image (not a host mount). It is writable by the agent during a session but changes are **ephemeral** — they do not persist across container restarts.
-- `npm` is configured (via `NPM_CONFIG_PREFIX`) to install global packages into `/home/<username>/.pi-sandbox`. This means `npm install -g` places modules in `/home/<username>/.pi-sandbox/lib/node_modules/` and binaries in `/home/<username>/.pi-sandbox/bin/` (which is on `PATH`).
+- npm packages are installed via `package.json` into `/home/<username>/.pi-sandbox/npm-packages/node_modules/`. Binaries from those packages (e.g., `pi`) are available via `node_modules/.bin/` on `PATH`. The `NPM_CONFIG_PREFIX` env var is still set for `npm install -g` (used by local packages like `pi-tmux-debug` and any runtime installs), which places global modules in `/home/<username>/.pi-sandbox/lib/node_modules/` and binaries in `/home/<username>/.pi-sandbox/bin/` (also on `PATH`).
 - Extensions are **disabled by default** and loaded via pi's `-ne` + `-e` mechanism. The entrypoint reads `PI_ENABLED_EXTENSIONS` (set by `pi-sandbox`) and constructs the appropriate `-e` flags. Do **not** add individual packages to `settings.json` — control extension enablement via `pi-sandbox` flags (see "Extension Opt-In System" above).
 
 ## AGENTS.md

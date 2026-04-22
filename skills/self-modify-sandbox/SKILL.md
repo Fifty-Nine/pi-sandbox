@@ -33,6 +33,9 @@ All sandbox source files are at `$HOME/.sandbox-source/`:
 
 Changes you make here persist on the host filesystem (the directory is a bind mount).
 
+CRITICAL INSTRUCTION: DO NOT make changes to `$HOME/.pi-sandbox` as THESE WILL NOT BE PERSISTED. Your changes must
+be written to `$HOME/.sandbox-source/`.
+
 ## How to Make Changes
 
 ### 1. Edit the relevant file

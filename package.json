@@ -1,0 +1,11 @@
+{
+  "name": "pi-sandbox-deps",
+  "version": "1.0.0",
+  "private": true,
+  "description": "npm dependencies for the pi-sandbox image. Pin exact versions here — changing a version invalidates the Docker/Podman build cache for the npm install layer.",
+  "dependencies": {
+    "@mariozechner/pi-coding-agent": "~0.68.0",
+    "pi-ask-user": "~0.6.1",
+    "pi-searxng": "~1.0.4"
+  }
+}

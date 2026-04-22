@@ -99,23 +99,38 @@ RUN mkdir -p /home/${SANDBOX_USER}/.pi-sandbox \
     && chown ${SANDBOX_USER}:${SANDBOX_GROUP} /home/${SANDBOX_USER}/.pi-sandbox
 
 # -------------------------------------------------------------------
-# 7. Configure npm to install global modules into .pi-sandbox
+# 7. Configure npm global prefix + PATH for sandbox binaries
+#     NPM_CONFIG_PREFIX is retained for runtime npm install -g use
+#     (e.g., pi-tmux-debug local package install).
+#     Main npm packages are installed via local npm install in
+#     .pi-sandbox/npm-packages/ (see step 8).
 # -------------------------------------------------------------------
 ENV NPM_CONFIG_PREFIX=/home/${SANDBOX_USER}/.pi-sandbox
-ENV PATH="/home/${SANDBOX_USER}/.pi-sandbox/bin:${PATH}"
+ENV PATH="/home/${SANDBOX_USER}/.pi-sandbox/npm-packages/node_modules/.bin:/home/${SANDBOX_USER}/.pi-sandbox/bin:${PATH}"
 
 # -------------------------------------------------------------------
-# 8. Install pi-coding-agent globally (as sandbox user so files are owned by them)
+# 8. Install npm packages from package.json (as sandbox user).
+#
+#     COPY package.json BEFORE npm install so that Docker/Podman caches
+#     the install layer based on the file content. Changing a version
+#     in package.json invalidates the COPY cache, which cascades to
+#     invalidate the npm install cache — triggering a fresh install.
+#
+#     This replaces the old `npm install -g <pkg1> <pkg2> ...` approach,
+#     which was always cached by Podman regardless of available updates.
+#
+#     To update a package: change its version in package.json and rebuild.
 # -------------------------------------------------------------------
+COPY --chown=${SANDBOX_USER}:${SANDBOX_GROUP} package.json /home/${SANDBOX_USER}/.pi-sandbox/npm-packages/
 USER ${SANDBOX_USER}
-RUN npm install -g @mariozechner/pi-coding-agent pi-ask-user pi-searxng
+RUN cd /home/${SANDBOX_USER}/.pi-sandbox/npm-packages && npm install
 
 # Create pi-extensions symlink farm (used by entrypoint to discover packages)
-# Adding a new package = add symlink here + add flag in pi-sandbox
+# Adding a new package = add to package.json + add symlink here + add flag in pi-sandbox
 RUN mkdir -p /home/${SANDBOX_USER}/.pi-sandbox/pi-extensions \
- && ln -s /home/${SANDBOX_USER}/.pi-sandbox/lib/node_modules/pi-ask-user \
+ && ln -s /home/${SANDBOX_USER}/.pi-sandbox/npm-packages/node_modules/pi-ask-user \
          /home/${SANDBOX_USER}/.pi-sandbox/pi-extensions/pi-ask-user \
- && ln -s /home/${SANDBOX_USER}/.pi-sandbox/lib/node_modules/pi-searxng \
+ && ln -s /home/${SANDBOX_USER}/.pi-sandbox/npm-packages/node_modules/pi-searxng \
          /home/${SANDBOX_USER}/.pi-sandbox/pi-extensions/pi-searxng
 
 # -------------------------------------------------------------------
@@ -124,7 +139,7 @@ RUN mkdir -p /home/${SANDBOX_USER}/.pi-sandbox/pi-extensions \
 # Overlay patched pi-searxng index.ts on top of the npm-installed version.
 # The npm install in step 8 resolves all dependencies; this COPY overwrites
 # only the patched source file with our fix (prepending page title to content).
-COPY --chown=${SANDBOX_USER}:${SANDBOX_GROUP} packages/pi-searxng/index.ts /home/${SANDBOX_USER}/.pi-sandbox/lib/node_modules/pi-searxng/index.ts
+COPY --chown=${SANDBOX_USER}:${SANDBOX_GROUP} packages/pi-searxng/index.ts /home/${SANDBOX_USER}/.pi-sandbox/npm-packages/node_modules/pi-searxng/index.ts
 
 COPY --chown=${SANDBOX_USER}:${SANDBOX_GROUP} packages/pi-tmux-debug /home/${SANDBOX_USER}/.pi-sandbox/pkg-src/pi-tmux-debug
 RUN npm install -g /home/${SANDBOX_USER}/.pi-sandbox/pkg-src/pi-tmux-debug \
