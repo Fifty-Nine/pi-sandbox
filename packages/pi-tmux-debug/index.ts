@@ -82,8 +82,15 @@ export default function (pi: ExtensionAPI) {
 
 	/**
 	 * Execute a tmux command and return the result.
-	 * In SSH mode, proxies via `ssh <host> tmux <args>` with ControlMaster=auto.
-	 * In local mode, runs `tmux [-S <socket>] <args>` directly.
+	 *
+	 * In SSH mode, the tmux arguments are joined with null bytes, base64-encoded,
+	 * and sent over SSH. On the remote side, the base64 is decoded and
+	 * `xargs -0` reconstructs the argument boundaries for `tmux`. This avoids
+	 * all shell interpretation issues (spaces, parens, backslashes, $, etc.)
+	 * since base64 output contains only safe shell characters [A-Za-z0-9+/=].
+	 *
+	 * In local mode, runs `tmux [-S <socket>] <args>` directly via spawn,
+	 * which preserves argument boundaries natively.
 	 */
 	async function tmuxExec(
 		args: string[],
@@ -92,9 +99,26 @@ export default function (pi: ExtensionAPI) {
 		const sshHost = process.env.TMUX_SSH_HOST;
 
 		if (sshHost) {
-			// SSH mode: ssh [control-opts] <host> tmux <args...>
-			// Uses default tmux socket on remote host (no -S flag)
-			return pi.exec("ssh", [...SSH_OPTIONS, sshHost, "tmux", ...args], {
+			// SSH mode: base64-encode null-separated args to bypass shell interpretation.
+			//
+			// Problem: SSH concatenates all arguments after the hostname into a single
+			// string passed to the remote shell. The remote shell then word-splits and
+			// interprets metacharacters, destroying argument boundaries at spaces and
+			// consuming backslashes, parentheses, $, etc.
+			//
+			// Solution: Join args with null bytes, base64-encode, and decode on the
+			// remote side. Base64 contains only [A-Za-z0-9+/=] — zero shell metacharacters.
+			// `xargs -0` splits on null bytes, reconstructing exact argument boundaries.
+			//
+			// Remote pipeline: printf '%s' BASE64 | base64 -d | xargs -0 tmux
+			const nullSeparated = args.join('\0');
+			const b64 = Buffer.from(nullSeparated, 'utf-8').toString('base64');
+			return pi.exec("ssh", [
+				...SSH_OPTIONS, sshHost,
+				"printf", "'%s'", b64,
+				"|", "base64", "-d",
+				"|", "xargs", "-0", "tmux",
+			], {
 				signal: options.signal,
 				timeout: options.timeout ?? TMUX_EXEC_TIMEOUT,
 			});

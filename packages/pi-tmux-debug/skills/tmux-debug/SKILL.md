@@ -54,6 +54,8 @@ target: mysession
 ### 2. Run Commands with Wait
 
 **Use `wait: true` on `send_keys`** to automatically wait for command completion instead of manually polling with `capture_pane`. The tool will:
+**Special Character Escaping**: When sending keys that include backslashes (e.g., escaping a semicolon for `find -exec`), you must use **double-backslashes** (`\\`) to ensure the backslash is delivered as a literal character to the shell.
+Example: To send `find . -exec echo {} \;`, use `keys: "find . -exec echo {} \\;"`.
 
 1. Send the keys
 2. Poll the pane until output stabilizes (content unchanged for 1 second)
