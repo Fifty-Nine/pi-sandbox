@@ -133,20 +133,20 @@ export default function (pi: ExtensionAPI) {
 	}
 
 	/**
-	 * Format a tmux exec result as a tool result, handling errors.
-	 * Returns null if no error.
+	 * Check a tmux exec result for errors. Throws on error, does nothing on success.
+	 *
+	 * Note: We throw instead of returning { isError: true } because the pi framework's
+	 * AgentToolResult type does not include an isError field. The framework determines
+	 * isError based on whether execute() throws (isError: true) or returns successfully
+	 * (isError: false). Returning isError: true on the result object is silently ignored.
 	 */
-	function handleResult(
+	function checkResult(
 		result: { stdout: string; stderr: string; code: number; killed: boolean },
 		action: string,
 		details: Record<string, unknown>,
-	) {
+	): void {
 		if (result.killed) {
-			return {
-				content: [{ type: "text" as const, text: "Tmux command timed out or was cancelled" }],
-				isError: true,
-				details: { ...details, action, killed: true },
-			};
+			throw new Error("Tmux command timed out or was cancelled");
 		}
 
 		if (result.code !== 0) {
@@ -155,14 +155,8 @@ export default function (pi: ExtensionAPI) {
 			const errorText = isSshError
 				? `SSH error: ${stderr || `ssh exited with code ${result.code}`}`
 				: (stderr || `tmux exited with code ${result.code}`);
-			return {
-				content: [{ type: "text" as const, text: `Error: ${errorText}` }],
-				isError: true,
-				details: { ...details, action, exitCode: result.code, isSshError: isSshError || undefined },
-			};
+			throw new Error(errorText);
 		}
-
-		return null;
 	}
 
 	/**
@@ -318,145 +312,120 @@ wait_timeout seconds, the tool returns whatever was captured along with a timeou
 			const targetArgs = buildTargetArgs(target);
 			const baseDetails: Record<string, unknown> = { target };
 
-			try {
-				switch (action) {
-					case "capture_pane": {
-						const args = ["capture-pane", "-p", ...targetArgs];
-						if (scrollback && scrollback > 0) {
-							args.push("-S", `-${scrollback}`);
-						}
-
-						const result = await tmuxExec(args, { signal });
-						const error = handleResult(result, action, { ...baseDetails, scrollback });
-						if (error) return error;
-
-						// Trim trailing blank lines for cleaner output
-						const output = result.stdout.replace(/\n+$/, "");
-						return {
-							content: [{ type: "text", text: output || "(empty pane)" }],
-							details: { ...baseDetails, action, scrollback },
-						};
+			switch (action) {
+				case "capture_pane": {
+					const args = ["capture-pane", "-p", ...targetArgs];
+					if (scrollback && scrollback > 0) {
+						args.push("-S", `-${scrollback}`);
 					}
 
-					case "send_keys": {
-						if (!keys) {
-							return {
-								content: [{ type: "text", text: "Error: 'keys' parameter is required for send_keys action" }],
-								isError: true,
-								details: { ...baseDetails, action },
-							};
-						}
+					const result = await tmuxExec(args, { signal });
+					checkResult(result, action, { ...baseDetails, scrollback });
 
-						const args = ["send-keys", ...targetArgs, keys];
-						if (enter) {
-							args.push("Enter");
-						}
-
-						const result = await tmuxExec(args, { signal, timeout: TMUX_SEND_TIMEOUT });
-						const error = handleResult(result, action, { ...baseDetails, keys, enter });
-						if (error) return error;
-
-						// Without wait: return immediately
-						if (!wait) {
-							const sentDescription = enter ? `${keys} + Enter` : keys;
-							return {
-								content: [{ type: "text", text: `Keys sent: ${sentDescription}` }],
-								details: { ...baseDetails, action, keys, enter },
-							};
-						}
-
-						// With wait: poll until content stabilizes or timeout
-						const timeoutS = wait_timeout ?? WAIT_DEFAULT_TIMEOUT_S;
-						const waitResult = await waitForCompletion(targetArgs, timeoutS, signal);
-
-						if (waitResult.completed) {
-							return {
-								content: [{ type: "text", text: waitResult.content }],
-								details: {
-									...baseDetails,
-									action,
-									keys,
-									enter,
-									wait: true,
-									completed: true,
-								},
-							};
-						}
-
-						if (waitResult.timedOut) {
-							return {
-								content: [{
-									type: "text",
-									text: `Command may still be running (waited ${timeoutS}s). Current pane:\n\n${waitResult.content}`,
-								}],
-								details: {
-									...baseDetails,
-									action,
-									keys,
-									enter,
-									wait: true,
-									completed: false,
-									timedOut: true,
-								},
-							};
-						}
-
-						// Aborted
-						return {
-							content: [{ type: "text", text: `Wait was cancelled. Last captured pane:\n\n${waitResult.content}` }],
-							isError: true,
-							details: { ...baseDetails, action, keys, enter, wait: true, completed: false, timedOut: false },
-						};
-					}
-
-					case "list_sessions": {
-						const result = await tmuxExec(["list-sessions"], { signal });
-						const error = handleResult(result, action, baseDetails);
-						if (error) return error;
-
-						return {
-							content: [{ type: "text", text: result.stdout.trim() || "No tmux sessions found" }],
-							details: { action },
-						};
-					}
-
-					case "list_windows": {
-						const args = ["list-windows", ...targetArgs];
-						const result = await tmuxExec(args, { signal });
-						const error = handleResult(result, action, baseDetails);
-						if (error) return error;
-
-						return {
-							content: [{ type: "text", text: result.stdout.trim() || "No windows found" }],
-							details: { ...baseDetails, action },
-						};
-					}
-
-					case "list_panes": {
-						const args = ["list-panes", ...targetArgs];
-						const result = await tmuxExec(args, { signal });
-						const error = handleResult(result, action, baseDetails);
-						if (error) return error;
-
-						return {
-							content: [{ type: "text", text: result.stdout.trim() || "No panes found" }],
-							details: { ...baseDetails, action },
-						};
-					}
-
-					default:
-						return {
-							content: [{ type: "text", text: `Unknown action: ${action}` }],
-							isError: true,
-						};
+					// Trim trailing blank lines for cleaner output
+					const output = result.stdout.replace(/\n+$/, "");
+					return {
+						content: [{ type: "text", text: output || "(empty pane)" }],
+						details: { ...baseDetails, action, scrollback },
+					};
 				}
-			} catch (error) {
-				const message = error instanceof Error ? error.message : String(error);
-				return {
-					content: [{ type: "text", text: `Tmux error: ${message}` }],
-					isError: true,
-					details: { ...baseDetails, action, error: message },
-				};
+
+				case "send_keys": {
+					if (!keys) {
+						throw new Error("'keys' parameter is required for send_keys action");
+					}
+
+					const args = ["send-keys", ...targetArgs, keys];
+					if (enter) {
+						args.push("Enter");
+					}
+
+					const result = await tmuxExec(args, { signal, timeout: TMUX_SEND_TIMEOUT });
+					checkResult(result, action, { ...baseDetails, keys, enter });
+
+					// Without wait: return immediately
+					if (!wait) {
+						const sentDescription = enter ? `${keys} + Enter` : keys;
+						return {
+							content: [{ type: "text", text: `Keys sent: ${sentDescription}` }],
+							details: { ...baseDetails, action, keys, enter },
+						};
+					}
+
+					// With wait: poll until content stabilizes or timeout
+					const timeoutS = wait_timeout ?? WAIT_DEFAULT_TIMEOUT_S;
+					const waitResult = await waitForCompletion(targetArgs, timeoutS, signal);
+
+					if (waitResult.completed) {
+						return {
+							content: [{ type: "text", text: waitResult.content }],
+							details: {
+								...baseDetails,
+								action,
+								keys,
+								enter,
+								wait: true,
+								completed: true,
+							},
+						};
+					}
+
+					if (waitResult.timedOut) {
+						return {
+							content: [{
+								type: "text",
+								text: `Command may still be running (waited ${timeoutS}s). Current pane:\n\n${waitResult.content}`,
+							}],
+							details: {
+								...baseDetails,
+								action,
+								keys,
+								enter,
+								wait: true,
+								completed: false,
+								timedOut: true,
+							},
+						};
+					}
+
+					// Aborted
+					throw new Error(`Wait was cancelled. Last captured pane:\n\n${waitResult.content}`);
+				}
+
+				case "list_sessions": {
+					const result = await tmuxExec(["list-sessions"], { signal });
+					checkResult(result, action, baseDetails);
+
+					return {
+						content: [{ type: "text", text: result.stdout.trim() || "No tmux sessions found" }],
+						details: { action },
+					};
+				}
+
+				case "list_windows": {
+					const args = ["list-windows", ...targetArgs];
+					const result = await tmuxExec(args, { signal });
+					checkResult(result, action, baseDetails);
+
+					return {
+						content: [{ type: "text", text: result.stdout.trim() || "No windows found" }],
+						details: { ...baseDetails, action },
+					};
+				}
+
+				case "list_panes": {
+					const args = ["list-panes", ...targetArgs];
+					const result = await tmuxExec(args, { signal });
+					checkResult(result, action, baseDetails);
+
+					return {
+						content: [{ type: "text", text: result.stdout.trim() || "No panes found" }],
+						details: { ...baseDetails, action },
+					};
+				}
+
+				default:
+					throw new Error(`Unknown action: ${action}`);
 			}
 		},
 	});
