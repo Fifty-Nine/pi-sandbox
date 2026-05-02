@@ -208,4 +208,10 @@ if [[ -n "$TMUX_SSH_HOST" ]]; then
     )
 fi
 
+if [[ -d "/home/${SANDBOX_USER}/.keys" ]]; then
+   DOCKER_ARGS+=(
+      --mount "type=bind,source=/home/${SANDBOX_USER}/.keys,target=/home/${SANDBOX_USER}/.keys,readonly"
+   )
+fi
+
 exec podman run -it --rm --userns=keep-id "${DOCKER_ARGS[@]}" "$IMAGE" "$@"

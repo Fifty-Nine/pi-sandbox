@@ -56,15 +56,17 @@ RUN cd /tmp \
     && rm -rf /tmp/tmux-${TMUX_VERSION}
 
 # -------------------------------------------------------------------
-# 2. pyenv + Python (set as default)
+# 2. Install uv + Python 3.14 (via uv's standalone Python builds)
 # -------------------------------------------------------------------
-ARG PYTHON_VERSION=3.13
-ENV PYENV_ROOT=/opt/pyenv
-ENV PATH="${PYENV_ROOT}/shims:${PYENV_ROOT}/bin:${PATH}"
+RUN curl -LsSf https://astral.sh/uv/install.sh | env UV_INSTALL_DIR=/usr/local/bin sh
 
-RUN git clone https://github.com/pyenv/pyenv.git "${PYENV_ROOT}" \
-    && pyenv install ${PYTHON_VERSION} \
-    && pyenv global ${PYTHON_VERSION}
+ENV UV_PYTHON_INSTALL_DIR=/opt/python
+ARG PYTHON_VERSION
+RUN uv python install ${PYTHON_VERSION} \
+    && PYTHON_BIN="$(uv python find ${PYTHON_VERSION})" \
+    && ln -s "$PYTHON_BIN" /usr/local/bin/python3 \
+    && ln -s "$PYTHON_BIN" /usr/local/bin/python \
+    && ln -s "$(dirname "$PYTHON_BIN")/pip3" /usr/local/bin/pip3
 
 # -------------------------------------------------------------------
 # 3. Node.js (modern) from NodeSource
@@ -122,8 +124,11 @@ ENV PATH="/home/${SANDBOX_USER}/.pi-sandbox/npm-packages/node_modules/.bin:/home
 #     To update a package: change its version in package.json and rebuild.
 # -------------------------------------------------------------------
 COPY --chown=${SANDBOX_USER}:${SANDBOX_GROUP} package.json /home/${SANDBOX_USER}/.pi-sandbox/npm-packages/
+RUN chown -R "${SANDBOX_USER}:${SANDBOX_GROUP}" /opt/python
 USER ${SANDBOX_USER}
-RUN cd /home/${SANDBOX_USER}/.pi-sandbox/npm-packages && npm install
+ENV UV_PROJECT_ENVIRONMENT="/home/${SANDBOX_USER}/.venv"
+RUN cd /home/${SANDBOX_USER}/.pi-sandbox/npm-packages && npm install \
+ && uv venv ${UV_PROJECT_ENVIRONMENT}
 
 # Create pi-extensions symlink farm (used by entrypoint to discover packages)
 # Adding a new package = add to package.json + add symlink here + add flag in pi-sandbox

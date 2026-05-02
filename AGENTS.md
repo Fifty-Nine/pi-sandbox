@@ -29,7 +29,8 @@ daemon, docker-compose stacks, or Docker images.
 ## Container Image (`pi-sandbox`)
 
 - **Base:** `debian:trixie-slim`
-- **Languages:** Python 3.13 (via pyenv), Node.js 22 (via NodeSource)
+- **Languages:** Python 3.14 (via uv standalone builds), Node.js 22 (via NodeSource)
+- **Tools:** `uv` (fast Python package manager by Astral)
 - **User:** Configurable at build time (defaults to the building user's UID/GID/name). Inside the container, the home directory is `/home/<username>/.pi-sandbox`. See **Build** below.
 - **npm packages:** Installed via `package.json` into `/home/<username>/.pi-sandbox/npm-packages/node_modules/` (see **npm Package Management** below)
 - **npm global prefix:** `/home/<username>/.pi-sandbox` (for any `npm install -g` during runtime; used by local packages like `pi-tmux-debug`)
