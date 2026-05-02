@@ -79,11 +79,12 @@ on the host). This means bind-mounted files are always owned by the correct host
 
 | Host path | Container path | Mode |
 |---|---|---|
-| `$HOME/.pi` | `/home/<username>/.pi` | read-write |  |
+| `$HOME/.pi` | `/home/<username>/.pi` | read-write |
 | `$PWD` | `/home/<username>/<relative>` | read-only (default), skipped with `--no-mount` |
 | `$HOME/.ssh` (if `--ssh`) | `/home/<username>/.ssh` | read-only |
 | SSH agent socket (if `--ssh`) | `/ssh-agent-socket/<basename>` | read-write (bind mount of socket directory) |
 | Sandbox source (if `--self-modify`) | `/home/<username>/.sandbox-source` | read-write |
+| Masked directories (`.piignore` / `--mask`) | `/home/<username>/<path>` | read-only bind mount from empty dir |
 
 `/home/<username>/.pi-sandbox` is **not** mounted from the host. It is baked into the container image and is container-ephemeral: the agent can write to it freely during a session, but changes do not persist across container restarts.
 
@@ -371,6 +372,89 @@ With `--ssh` (or `-S`), the sandbox forwards the host's SSH agent and mounts
 ./pi-sandbox -S --tmux          # SSH + local tmux debug
 ./pi-sandbox -S --tmux-ssh host # SSH + remote tmux over SSH
 ```
+
+## Directory Masking
+
+The sandbox supports **masking** directories so they appear empty inside the
+container. This is useful for hiding sensitive subdirectories (e.g.
+`secrets/`, `.env/`, `credentials/`) from the agent without affecting the
+host filesystem.
+
+### How It Works
+
+Masking works by overlaying a **read-only bind mount** from a temporary empty
+directory on top of the target directory inside the container. The container's
+mount namespace is separate from the host — the overlay only exists inside the
+container and has **zero impact on the host filesystem**. No files are copied,
+chmod'd, or modified on the host.
+
+Masked directories appear as empty, read-only directories to the agent.
+
+> **Note:** We use bind mounts (not `--tmpfs`) because Podman processes
+> `--tmpfs` mounts before `--mount type=bind` mounts regardless of command-line
+> order. This means a tmpfs overlay on a subdirectory of the CWD bind mount
+> would be silently overridden. Bind mounts are applied in order, so the mask
+> overlay correctly supersedes the CWD mount.
+
+### Sources of Mask Paths
+
+1. **`.piignore` file** (automatic): If a `.piignore` file exists in the
+   working directory, it is read automatically. Each non-comment,
+   non-blank line is a path to mask (relative to the working directory).
+   Glob patterns (`*` and `**`) are expanded against the host filesystem.
+
+2. **`--mask PATH` flag** (explicit): Masks an additional directory.
+   `PATH` is relative to the working directory (or absolute on the host).
+   May be specified multiple times.
+
+3. **`--no-piignore` flag**: Skips `.piignore` processing even if the file
+   exists. Explicit `--mask` paths are still applied.
+
+### `.piignore` Format
+
+```
+# Comment lines start with #
+secrets/
+credentials/
+**/node_modules/
+.env/
+```
+
+- One path per line, relative to the working directory
+- Blank lines and `#` comments are ignored
+- Glob patterns (`*` and `**`) are expanded against the host filesystem
+- Only **directories** are masked (individual files cannot be masked)
+- Paths ending with `/` or not are both accepted
+
+### Usage
+
+```bash
+# Auto-mask directories from .piignore
+./pi-sandbox
+
+# Explicitly mask a directory
+./pi-sandbox --mask secrets/
+./pi-sandbox --mask secrets/ --mask .env/
+
+# Skip .piignore processing
+./pi-sandbox --no-piignore
+
+# Combine with other flags
+./pi-sandbox -w --mask secrets/
+./pi-sandbox --no-piignore --mask secrets/
+```
+
+### Implementation Details
+
+- Mask paths are translated from host paths to container paths using the same
+  `$HOME` → `/home/<username>` mapping as the CWD mount
+- Each mask path gets a `--mount type=bind,source=<tmpdir>,target=<path>,readonly`
+  in the container, where `<tmpdir>` is a temporary empty directory created by
+  the launch script and cleaned up after the container exits
+- Mask paths are deduplicated (multiple `--mask` flags or `.piignore` entries
+  that resolve to the same path are merged)
+- Masking is skipped when `--no-mount` is used (no CWD mount = nothing to
+  mask under)
 
 ## Notes
 

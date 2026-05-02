@@ -19,6 +19,8 @@ TMUX_SSH_HOST=""
 SSH_MODE=false
 NO_ASK_USER=false
 NO_SEARXNG=false
+NO_PIIGNORE=false
+MASK_PATHS=()
 
 # -------------------------------------------------------------------
 # Extension enablement: which pi extensions to load via -e.
@@ -59,6 +61,15 @@ while [[ $# -gt 0 ]]; do
             ENABLED_EXTENSIONS+=(pi-tmux-debug)
             shift 2
             ;;
+        --mask)
+            if [[ $# -lt 2 ]]; then
+                echo "Error: --mask requires a path argument" >&2; exit 1
+            fi
+            MASK_PATHS+=("$2")
+            shift 2
+            ;;
+        --no-piignore)
+            NO_PIIGNORE=true; shift ;;
         --no-ask-user)
             NO_ASK_USER=true; shift ;;
         --no-searxng)
@@ -85,6 +96,11 @@ while [[ $# -gt 0 ]]; do
             echo "  --tmux-ssh HOST    Enable SSH tmux mode and the pi-tmux-debug extension:"
             echo "                      proxy tmux commands to HOST over SSH."
             echo "                      Requires -S/--ssh for SSH agent forwarding."
+            echo "  --mask PATH        Mask a directory from the agent by overlaying an empty"
+            echo "                      read-only mount. PATH is relative to the working directory."
+            echo "                      May be specified multiple times. Masked dirs appear empty"
+            echo "                      inside the container with no host impact."
+            echo "  --no-piignore      Do not read .piignore even if it exists in the working dir"
             echo "  --no-ask-user      Disable the pi-ask-user extension (enabled by default)"
             echo "  --no-searxng       Disable the pi-searxng extension (enabled by default)"
             echo "  --                  End of options; remaining args are passed to pi"
@@ -93,10 +109,23 @@ while [[ $# -gt 0 ]]; do
             echo "After --, if the first argument starts with '-' or is 'pi', it is treated as"
             echo "a pi argument. Otherwise it replaces the container command entirely."
             echo ""
+            echo ""
+            echo "Masking:"
+            echo "  Directories listed in .piignore (in the working directory) are automatically"
+            echo "  masked from the agent — they appear as empty, read-only directories inside the"
+            echo "  container. This has no impact on the host filesystem. Use --no-piignore to"
+            echo "  skip this. Additional directories can be masked with --mask."
+            echo ""
+            echo "  The .piignore format is one path per line (relative to working directory)."
+            echo "  Blank lines and lines starting with # are comments. Paths ending with / match"
+            echo "  directories. Glob patterns (* and **) are supported."
+            echo ""
             echo "Examples:"
             echo "  pi-sandbox                      # pi -ne -e pi-ask-user -e pi-searxng"
             echo "  pi-sandbox --tmux               # pi -ne -e pi-ask-user -e pi-searxng -e pi-tmux-debug"
             echo "  pi-sandbox --no-ask-user        # pi -ne -e pi-searxng"
+            echo "  pi-sandbox --mask secrets/     # also mask the secrets/ directory"
+            echo "  pi-sandbox --no-piignore       # skip .piignore even if it exists"
             echo "  pi-sandbox -- --resume          # pi -ne -e pi-ask-user -e pi-searxng --resume"
             echo "  pi-sandbox -- bash              # bash (not pi)"
             exit 0
@@ -214,4 +243,106 @@ if [[ -d "/home/${SANDBOX_USER}/.keys" ]]; then
    )
 fi
 
-exec podman run -it --rm --userns=keep-id "${DOCKER_ARGS[@]}" "$IMAGE" "$@"
+# -------------------------------------------------------------------
+# Directory masking: overlay empty read-only bind mounts on top of
+# paths that should be hidden from the agent. This has zero impact on
+# the host filesystem — the masking is purely inside the container's
+# mount namespace.
+#
+# We use bind mounts from a temporary empty directory instead of tmpfs,
+# because Podman processes --tmpfs mounts before --mount type=bind
+# mounts regardless of command-line order. This means a tmpfs overlay
+# on a subdirectory of a bind mount (like the CWD) would be silently
+# overridden by the bind mount. Using bind mounts for masking ensures
+# they are applied in command-line order, after the CWD bind mount.
+#
+# Sources of mask paths:
+#   1. --mask PATH flags (may be specified multiple times)
+#   2. .piignore file in the working directory (one path per line,
+#      comments with #, glob patterns with * and **)
+#
+# Each mask path is translated from host path to container path
+# (replacing $HOME with $CONTAINER_HOME) and overlaid with a read-only
+# bind mount from a temporary empty directory.
+# -------------------------------------------------------------------
+CONTAINER_MASK_PATHS=()
+
+# Translate explicit --mask paths to container paths
+for mask_path in ${MASK_PATHS[0]+"${MASK_PATHS[@]}"}; do
+    # Resolve relative to CWD
+    if [[ "$mask_path" = /* ]]; then
+        abs_mask="$mask_path"
+    else
+        abs_mask="$PWD/$mask_path"
+    fi
+    # Normalize (remove trailing slash, resolve . and ..)
+    abs_mask="$(cd "$(dirname "$abs_mask")" 2>/dev/null && pwd)/$(basename "$abs_mask")" 2>/dev/null || abs_mask="$PWD/$mask_path"
+    # Translate to container path
+    container_mask="${abs_mask/#$HOME/$CONTAINER_HOME}"
+    CONTAINER_MASK_PATHS+=("$container_mask")
+done
+
+# Read .piignore if present (and not disabled)
+if ! $NO_PIIGNORE && ! $NO_MOUNT && [[ -f "$PWD/.piignore" ]]; then
+    # Enable globstar for ** patterns and nullglob for unmatched patterns
+    prev_globstar=$(shopt -p globstar 2>/dev/null || true)
+    prev_nullglob=$(shopt -p nullglob 2>/dev/null || true)
+    shopt -s globstar nullglob
+    while IFS= read -r line || [[ -n "$line" ]]; do
+        # Strip leading/trailing whitespace
+        line="${line## }"
+        line="${line%% }"
+        # Skip empty lines and comments
+        [[ -z "$line" || "$line" =~ ^# ]] && continue
+        # Strip trailing slash for consistent matching
+        line="${line%/}"
+        # Expand glob patterns against the host filesystem
+        # shellcheck disable=SC2086
+        for match in $PWD/$line; do
+            if [[ -d "$match" ]]; then
+                # Translate matched directory to container path
+                abs_match="$(cd "$match" && pwd)"
+                container_match="${abs_match/#$HOME/$CONTAINER_HOME}"
+                CONTAINER_MASK_PATHS+=("$container_match")
+            fi
+        done
+    done < "$PWD/.piignore"
+    # Restore previous globstar/nullglob settings
+    eval "$prev_globstar"
+    eval "$prev_nullglob"
+fi
+
+# Deduplicate mask paths
+UNIQUE_MASK_PATHS=()
+for path in "${CONTAINER_MASK_PATHS[@]}"; do
+    skip=false
+    for seen in "${UNIQUE_MASK_PATHS[@]}"; do
+        if [[ "$path" == "$seen" ]]; then
+            skip=true
+            break
+        fi
+    done
+    $skip || UNIQUE_MASK_PATHS+=("$path")
+done
+
+# Create a temporary empty directory for mask bind mounts.
+# We use bind mounts from this empty directory instead of tmpfs because
+# Podman applies --tmpfs mounts before --mount type=bind mounts regardless
+# of command-line order, which would cause a tmpfs overlay to be silently
+# overridden by the CWD bind mount. Bind mounts are applied in order.
+if [[ ${#UNIQUE_MASK_PATHS[@]} -gt 0 ]]; then
+    MASK_EMPTY_DIR=$(mktemp -d) || { echo "Error: Failed to create temp directory for masking" >&2; exit 1; }
+    for mask_path in "${UNIQUE_MASK_PATHS[@]}"; do
+        DOCKER_ARGS+=("--mount" "type=bind,source=$MASK_EMPTY_DIR,target=$mask_path,readonly")
+    done
+    # Run podman without exec so we can clean up the temp directory afterwards.
+    # The bind mount is established at container creation time, so removing the
+    # source directory after the container exits is safe — the data is no longer
+    # needed by the container.
+    podman run -it --rm --userns=keep-id "${DOCKER_ARGS[@]}" "$IMAGE" "$@"
+    EXIT_STATUS=$?
+    rm -rf "$MASK_EMPTY_DIR"
+    exit $EXIT_STATUS
+else
+    exec podman run -it --rm --userns=keep-id "${DOCKER_ARGS[@]}" "$IMAGE" "$@"
+fi

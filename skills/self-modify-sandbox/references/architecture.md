@@ -48,6 +48,8 @@ The pi-sandbox is a Docker container that provides an isolated environment for r
 
 5. **Self-modification**: When launched with `--self-modify`, the sandbox source directory is mounted at `$HOME/.sandbox-source/` (read-write). The entrypoint auto-discovers the `self-modify-sandbox` skill from this mount.
 
+6. **Directory masking**: Directories can be hidden from the agent using `--mask PATH` flags or `.piignore` files. Masked directories are overlaid with a read-only bind mount from a temporary empty directory inside the container, making them appear empty. A temporary empty directory is created on the host (`mktemp -d`) and bind-mounted read-only over each masked path. Podman processes all bind mounts in command-line order, so the mask overlay is applied after the CWD bind mount and correctly hides its contents. The temp directory is cleaned up after the container exits. No files are modified on the host, and no copies of masked data are made. See the Directory Masking section in AGENTS.md for details.
+
 ## Making Permanent Changes
 
 Since `.pi-sandbox` is ephemeral, the only way to make changes that survive container restarts is to:
