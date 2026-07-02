@@ -7,7 +7,7 @@ SANDBOX_GID=$(id -g)
 SANDBOX_USER=$(id -un)
 SANDBOX_GROUP=$(id -gn)
 TMUX_VERSION=$(tmux -V | sed -re 's/^tmux\s+//')
-PYTHON_VERSION=$(python3 --version | sed -re 's/^Python\s+//')
+PYTHON_VERSION=$(python3 --version | sed -re 's/^Python\s+([0-9]+\.[0-9]+).*/\1/')
 
 while [[ $# -gt 0 ]]; do
     case "$1" in
