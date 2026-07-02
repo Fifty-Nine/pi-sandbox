@@ -34,7 +34,7 @@ daemon, docker-compose stacks, or Docker images.
 - **User:** Configurable at build time (defaults to the building user's UID/GID/name). Inside the container, the home directory is `/home/<username>/.pi-sandbox`. See **Build** below.
 - **npm packages:** Installed via `package.json` into `/home/<username>/.pi-sandbox/npm-packages/node_modules/` (see **npm Package Management** below)
 - **npm global prefix:** `/home/<username>/.pi-sandbox` (for any `npm install -g` during runtime; used by local packages like `pi-tmux-debug`)
-- **Entry command:** `pi` (from `@mariozechner/pi-coding-agent`)
+- **Entry command:** `pi` (from `@earendil-works/pi-coding-agent`)
 
 ### Build
 

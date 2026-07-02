@@ -22,8 +22,8 @@
     "README.md"
   ],
   "peerDependencies": {
-    "@mariozechner/pi-coding-agent": "*",
+    "@earendil-works/pi-coding-agent": "*",
     "@sinclair/typebox": "*",
-    "@mariozechner/pi-ai": "*"
+    "@earendil-works/pi-ai": "*"
   }
 }

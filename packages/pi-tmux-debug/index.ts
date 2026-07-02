@@ -13,9 +13,9 @@
  *    SSH connections use ControlMaster=auto for self-healing multiplexing.
  */
 
-import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
+import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { Type } from "@sinclair/typebox";
-import { StringEnum } from "@mariozechner/pi-ai";
+import { StringEnum } from "@earendil-works/pi-ai";
 
 const TMUX_EXEC_TIMEOUT = 10_000;
 const TMUX_SEND_TIMEOUT = 5_000;
