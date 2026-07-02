@@ -129,12 +129,12 @@ session history, and skills remain accessible and new sessions persist to the ho
 ./pi-sandbox --tmux
 ./pi-sandbox --tmux /tmp/tmux-1000/default
 
-# Disable pi-ask-user (pi-searxng still enabled)
+# Disable pi-ask-user (searxng-suite still enabled)
 ./pi-sandbox --no-ask-user
 
 # Pass additional pi arguments after --
-./pi-sandbox -- --resume                  # pi -ne -e pi-ask-user -e pi-searxng --resume
-./pi-sandbox --tmux -- --resume            # pi -ne -e pi-ask-user -e pi-searxng -e pi-tmux-debug --resume
+./pi-sandbox -- --resume                  # pi -ne -e pi-ask-user -e searxng-suite --resume
+./pi-sandbox --tmux -- --resume            # pi -ne -e pi-ask-user -e searxng-suite -e pi-tmux-debug --resume
 
 # Override the container command entirely
 ./pi-sandbox -- bash
@@ -152,7 +152,7 @@ session history, and skills remain accessible and new sessions persist to the ho
 ## Extension Opt-In System
 
 Sandbox extensions are **disabled by default** and must be explicitly enabled
-via `pi-sandbox` flags, except for `pi-ask-user` and `pi-searxng` which are
+via `pi-sandbox` flags, except for `pi-ask-user` and `searxng-suite` which are
 enabled by default. This gives users fine-grained control over which
 capabilities the agent has access to.
 
@@ -180,25 +180,25 @@ appropriate `-e` flags.
 
 | Flag | Extensions enabled | Notes |
 |------|-------------------|-------|
-| *(default)* | `pi-ask-user`, `pi-searxng` | Default extensions are always on unless explicitly disabled |
-| `--tmux [SOCKET]` | `pi-ask-user`, `pi-searxng`, `pi-tmux-debug` | Also mounts tmux socket |
-| `--tmux-ssh HOST` | `pi-ask-user`, `pi-searxng`, `pi-tmux-debug` | Proxies tmux over SSH |
-| `--no-ask-user` | `pi-searxng` | Disables only `pi-ask-user`; other defaults remain |
-| `--no-searxng` | `pi-ask-user` | Disables only `pi-searxng`; other defaults remain |
+| *(default)* | `pi-ask-user`, `searxng-suite` | Default extensions are always on unless explicitly disabled |
+| `--tmux [SOCKET]` | `pi-ask-user`, `searxng-suite`, `pi-tmux-debug` | Also mounts tmux socket |
+| `--tmux-ssh HOST` | `pi-ask-user`, `searxng-suite`, `pi-tmux-debug` | Proxies tmux over SSH |
+| `--no-ask-user` | `searxng-suite` | Disables only `pi-ask-user`; other defaults remain |
+| `--no-searxng` | `pi-ask-user` | Disables only `searxng-suite`; other defaults remain |
 | `--no-ask-user --no-searxng` | *(none)* | Disables all default extensions |
 
 ### Example Invocations
 
 | `pi-sandbox` command | Actual `pi` command in container |
 |---|---|
-| `pi-sandbox` | `pi -ne -e .../pi-ask-user -e .../pi-searxng` |
-| `pi-sandbox --tmux` | `pi -ne -e .../pi-ask-user -e .../pi-searxng -e .../pi-tmux-debug` |
-| `pi-sandbox --tmux-ssh host -S` | `pi -ne -e .../pi-ask-user -e .../pi-searxng -e .../pi-tmux-debug` |
-| `pi-sandbox --no-ask-user` | `pi -ne -e .../pi-searxng` |
+| `pi-sandbox` | `pi -ne -e .../pi-ask-user -e .../searxng-suite` |
+| `pi-sandbox --tmux` | `pi -ne -e .../pi-ask-user -e .../searxng-suite -e .../pi-tmux-debug` |
+| `pi-sandbox --tmux-ssh host -S` | `pi -ne -e .../pi-ask-user -e .../searxng-suite -e .../pi-tmux-debug` |
+| `pi-sandbox --no-ask-user` | `pi -ne -e .../searxng-suite` |
 | `pi-sandbox --no-searxng` | `pi -ne -e .../pi-ask-user` |
 | `pi-sandbox --no-ask-user --no-searxng` | `pi -ne` (no extensions) |
-| `pi-sandbox -- --resume` | `pi -ne -e .../pi-ask-user -e .../pi-searxng --resume` |
-| `pi-sandbox -- -e /my/ext` | `pi -ne -e .../pi-ask-user -e .../pi-searxng -e /my/ext` |
+| `pi-sandbox -- --resume` | `pi -ne -e .../pi-ask-user -e .../searxng-suite --resume` |
+| `pi-sandbox -- -e /my/ext` | `pi -ne -e .../pi-ask-user -e .../searxng-suite -e /my/ext` |
 | `pi-sandbox -- bash` | `bash` (not pi) |
 
 Current packages:
@@ -206,8 +206,20 @@ Current packages:
 | Package | Purpose | Enabled by |
 |---------|---------|------------|
 | `pi-ask-user` | Interactive `ask_user` tool with searchable selection UI | default (disable with `--no-ask-user`) |
-| `pi-searxng` | SearXNG web search tool for the agent | default (disable with `--no-searxng`) |
+| `searxng-suite` | SearXNG web search & fetch tool for the agent (`@blazer2k/searxng-suite` npm package) | default (disable with `--no-searxng`) |
 | `pi-tmux-debug` | Tmux interaction tool (`capture-pane`, `send-keys`, etc.) + `tmux-debug` skill | `--tmux` or `--tmux-ssh` |
+
+### SearXNG URL
+
+The `searxng-suite` extension reads the `SEARXNG_URL` environment variable to find
+the SearXNG instance. The launch script forwards the host's `SEARXNG_URL` into
+the container. If not set, the extension defaults to `http://localhost:8888`.
+
+```bash
+# Set on the host before launching:
+export SEARXNG_URL=https://searxng.home.trprince.com
+./pi-sandbox
+```
 
 ### Atlassian CLI (`acli`)
 

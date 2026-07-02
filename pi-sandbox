@@ -25,12 +25,12 @@ MASK_PATHS=()
 
 # -------------------------------------------------------------------
 # Extension enablement: which pi extensions to load via -e.
-# pi-ask-user and pi-searxng are enabled by default; disable with --no-ask-user / --no-searxng.
+# pi-ask-user and searxng-suite are enabled by default; disable with --no-ask-user / --no-searxng.
 # pi-tmux-debug is enabled by --tmux or --tmux-ssh.
 # To add a new extension: add a flag below that appends to
 # ENABLED_EXTENSIONS, and add the flag to --help.
 # -------------------------------------------------------------------
-ENABLED_EXTENSIONS=(pi-ask-user pi-searxng)
+ENABLED_EXTENSIONS=(pi-ask-user searxng-suite)
 
 while [[ $# -gt 0 ]]; do
     case "$1" in
@@ -82,7 +82,7 @@ while [[ $# -gt 0 ]]; do
             echo ""
             echo "Launch the pi-sandbox Podman container."
             echo ""
-            echo "By default the container runs 'pi -ne -e pi-ask-user -e pi-searxng'. Extensions are"
+            echo "By default the container runs 'pi -ne -e pi-ask-user -e searxng-suite'. Extensions are"
             echo "disabled unless explicitly enabled via the flags below."
             echo ""
             echo "Options:"
@@ -106,13 +106,16 @@ while [[ $# -gt 0 ]]; do
             echo "                      inside the container with no host impact."
             echo "  --no-piignore      Do not read .piignore even if it exists in the working dir"
             echo "  --no-ask-user      Disable the pi-ask-user extension (enabled by default)"
-            echo "  --no-searxng       Disable the pi-searxng extension (enabled by default)"
+            echo "  --no-searxng       Disable the searxng-suite extension (enabled by default)"
             echo "  --                  End of options; remaining args are passed to pi"
             echo "                      (or used as the container command if not a pi flag)"
             echo ""
             echo "After --, if the first argument starts with '-' or is 'pi', it is treated as"
             echo "a pi argument. Otherwise it replaces the container command entirely."
             echo ""
+            echo "Environment variables:"
+            echo "  SEARXNG_URL        SearXNG instance URL (default: http://localhost:8888)."
+            echo "                     Set on the host to configure the searxng-suite extension."
             echo ""
             echo "Masking:"
             echo "  Directories listed in .piignore (in the working directory) are automatically"
@@ -125,12 +128,12 @@ while [[ $# -gt 0 ]]; do
             echo "  directories. Glob patterns (* and **) are supported."
             echo ""
             echo "Examples:"
-            echo "  pi-sandbox                      # pi -ne -e pi-ask-user -e pi-searxng"
-            echo "  pi-sandbox --tmux               # pi -ne -e pi-ask-user -e pi-searxng -e pi-tmux-debug"
-            echo "  pi-sandbox --no-ask-user        # pi -ne -e pi-searxng"
+            echo "  pi-sandbox                      # pi -ne -e pi-ask-user -e searxng-suite"
+            echo "  pi-sandbox --tmux               # pi -ne -e pi-ask-user -e searxng-suite -e pi-tmux-debug"
+            echo "  pi-sandbox --no-ask-user        # pi -ne -e searxng-suite"
             echo "  pi-sandbox --mask secrets/     # also mask the secrets/ directory"
             echo "  pi-sandbox --no-piignore       # skip .piignore even if it exists"
-            echo "  pi-sandbox -- --resume          # pi -ne -e pi-ask-user -e pi-searxng --resume"
+            echo "  pi-sandbox -- --resume          # pi -ne -e pi-ask-user -e searxng-suite --resume"
             echo "  pi-sandbox -- bash              # bash (not pi)"
             exit 0
             ;;
@@ -147,6 +150,11 @@ CONTAINER_HOME=/home/$SANDBOX_USER
 DOCKER_ARGS=(
     --mount "type=bind,source=$HOME/.pi,target=$CONTAINER_HOME/.pi"
 )
+
+# Forward SearXNG URL to the container (used by searxng-suite extension).
+# Falls back to a default if not set on the host.
+SEARXNG_URL=${SEARXNG_URL:-https://searxng.home.trprince.com}
+DOCKER_ARGS+=(--env SEARXNG_URL=$SEARXNG_URL)
 
 if $NO_MOUNT; then
     # No CWD mount — agent works from /home/$SANDBOX_USER (read-write by default)
@@ -195,7 +203,7 @@ fi
 
 # Build PI_ENABLED_EXTENSIONS from the accumulated list.
 # --no-ask-user / --no-searxng remove individual defaults.
-for REMOVE_EXT in $([[ "$NO_ASK_USER" == true ]] && echo pi-ask-user) $([[ "$NO_SEARXNG" == true ]] && echo pi-searxng); do
+for REMOVE_EXT in $([[ "$NO_ASK_USER" == true ]] && echo pi-ask-user) $([[ "$NO_SEARXNG" == true ]] && echo searxng-suite); do
     FILTERED=()
     for ext in "${ENABLED_EXTENSIONS[@]}"; do
         if [ "$ext" != "$REMOVE_EXT" ]; then

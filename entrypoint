@@ -117,6 +117,15 @@ PI_EXT_DIR="$HOME/.pi-sandbox/pi-extensions"
 # ---------------------------------------------------------------------------
 export PI_CODING_AGENT_DIR="$SHADOW_AGENT_DIR"
 
+# ---------------------------------------------------------------------------
+# SearXNG URL: if passed via PI_SEARXNG_URL from the launch script, export
+# it as SEARXNG_URL for the searxng-suite extension to pick up.
+# If not set, fall back to the extension default (http://localhost:8888).
+# ---------------------------------------------------------------------------
+if [ -n "${PI_SEARXNG_URL:-}" ]; then
+    export SEARXNG_URL="$PI_SEARXNG_URL"
+fi
+
 # Decide whether to inject extension flags into pi, or exec as-is.
 # - No args (default CMD "pi")        → inject
 # - First arg is "pi"                 → inject, shift past "pi"
