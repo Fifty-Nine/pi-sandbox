@@ -6,7 +6,7 @@ A Podman-based sandbox for running `pi-coding-agent` in an isolated environment.
 
 | File | Purpose |
 |---|---|
-| `Dockerfile` | Builds the `pi-sandbox` image (Debian Trixie, pyenv/Python 3.13, Node 22, pi-coding-agent) |
+| `Dockerfile` | Builds the `pi-sandbox` image (Debian Trixie, Python 3.14, Node 22, pi-coding-agent, acli) |
 | `package.json` | Pinned npm dependencies for the image. Changing a version here invalidates the Docker build cache for the npm install layer, triggering a fresh install. |
 | `pi-sandbox` | Launch script that mounts config + working directory into the container |
 | `entrypoint` | Container entrypoint: sets up extension symlinks, skill symlinks, then execs CMD |
@@ -30,7 +30,7 @@ daemon, docker-compose stacks, or Docker images.
 
 - **Base:** `debian:trixie-slim`
 - **Languages:** Python 3.14 (via uv standalone builds), Node.js 22 (via NodeSource)
-- **Tools:** `uv` (fast Python package manager by Astral)
+- **Tools:** `uv` (fast Python package manager by Astral), `acli` (Atlassian Command Line Interface for Jira)
 - **User:** Configurable at build time (defaults to the building user's UID/GID/name). Inside the container, the home directory is `/home/<username>/.pi-sandbox`. See **Build** below.
 - **npm packages:** Installed via `package.json` into `/home/<username>/.pi-sandbox/npm-packages/node_modules/` (see **npm Package Management** below)
 - **npm global prefix:** `/home/<username>/.pi-sandbox` (for any `npm install -g` during runtime; used by local packages like `pi-tmux-debug`)
@@ -83,6 +83,8 @@ on the host). This means bind-mounted files are always owned by the correct host
 | `$PWD` | `/home/<username>/<relative>` | read-only (default), skipped with `--no-mount` |
 | `$HOME/.ssh` (if `--ssh`) | `/home/<username>/.ssh` | read-only |
 | SSH agent socket (if `--ssh`) | `/ssh-agent-socket/<basename>` | read-write (bind mount of socket directory) |
+| `$HOME/.config/acli` (if `--acli`) | `/home/<username>/.config/acli` | read-only |
+| `/run/user/<uid>` (if `--acli`) | `/run/user/<uid>` | read-write (D-Bus session bus for keyring) |
 | Sandbox source (if `--self-modify`) | `/home/<username>/.sandbox-source` | read-write |
 | Masked directories (`.piignore` / `--mask`) | `/home/<username>/<path>` | read-only bind mount from empty dir |
 
@@ -120,6 +122,9 @@ session history, and skills remain accessible and new sessions persist to the ho
 ./pi-sandbox -S
 ./pi-sandbox --ssh
 
+# ACLI mode — mount ~/.config/acli read-only for Jira authentication
+./pi-sandbox --acli
+
 # Tmux debug mode — mount tmux socket + enable pi-tmux-debug extension
 ./pi-sandbox --tmux
 ./pi-sandbox --tmux /tmp/tmux-1000/default
@@ -140,6 +145,8 @@ session history, and skills remain accessible and new sessions persist to the ho
 ./pi-sandbox -s -x
 ./pi-sandbox -S -w
 ./pi-sandbox -S --tmux
+./pi-sandbox --acli -w
+./pi-sandbox --acli -s
 ```
 
 ## Extension Opt-In System
@@ -201,6 +208,34 @@ Current packages:
 | `pi-ask-user` | Interactive `ask_user` tool with searchable selection UI | default (disable with `--no-ask-user`) |
 | `pi-searxng` | SearXNG web search tool for the agent | default (disable with `--no-searxng`) |
 | `pi-tmux-debug` | Tmux interaction tool (`capture-pane`, `send-keys`, etc.) + `tmux-debug` skill | `--tmux` or `--tmux-ssh` |
+
+### Atlassian CLI (`acli`)
+
+The Atlassian CLI (`acli`) is installed system-wide via its official APT repository. It is always available inside the container (no extension flag needed).
+
+`acli` enables the `cmpcpp-jira-search` skill to search and inspect Jira workitems. Use the `--acli` flag to mount your acli config and keyring access into the container.
+
+`acli` stores authentication tokens (both OAuth and API token) in the OS keyring (D-Bus Secret Service), not in config files on disk. The `--acli` flag forwards the host's D-Bus session bus into the container so `acli` can retrieve tokens from the keyring. Both OAuth and API token auth work inside the container with `--acli`.
+
+To set up authentication on the host (one-time):
+
+```bash
+# OAuth (browser-based, recommended):
+acli jira auth login --web
+
+# API token (for headless/CI environments):
+echo "$API_TOKEN" | acli jira auth login --email you@example.com --site yourorg.atlassian.net --token
+```
+
+```bash
+# Verify acli is available
+acli --version
+
+# Search Jira (requires --acli flag)
+pi-sandbox --acli
+# Inside the container:
+acli jira workitem search --jql 'project = cmpcpp and status = New' --json
+```
 
 ### Adding a New Extension
 
@@ -371,6 +406,55 @@ With `--ssh` (or `-S`), the sandbox forwards the host's SSH agent and mounts
 ./pi-sandbox -S -s          # SSH + self-modify
 ./pi-sandbox -S --tmux          # SSH + local tmux debug
 ./pi-sandbox -S --tmux-ssh host # SSH + remote tmux over SSH
+```
+
+## ACLI Mode
+
+With `--acli`, the sandbox mounts `~/.config/acli/` read-only from the host
+and forwards the D-Bus session bus into the container, enabling `acli` (the
+Atlassian Command Line Interface) to authenticate with Jira. This is required
+for the `cmpcpp-jira-search` skill and any other `acli`-based Jira workflows.
+
+**What gets mounted/configured:**
+
+- `$HOME/.config/acli/` from the host is mounted read-only at
+  `/home/<username>/.config/acli/` inside the container. This directory
+  contains the `acli` configuration and profile metadata.
+- The host's `/run/user/<uid>` directory is bind-mounted into the container
+  at the same path, and `DBUS_SESSION_BUS_ADDRESS` is set to point to the D-Bus
+  socket. This gives `acli` access to the host's Secret Service keyring
+  (gnome-keyring / kwallet), where auth tokens are stored regardless of
+  authentication type.
+
+**Prerequisites:**
+
+- You must authenticate with `acli` on the host first. Both OAuth (`acli auth login --web`)
+  and API token (`echo "$TOKEN" | acli jira auth login --site ... --email ... --token`)
+  methods work, because `--acli` forwards the keyring via D-Bus.
+- The launch script validates that `~/.config/acli/` exists and exits with an
+  error if it is missing.
+- `acli` is installed system-wide in the container image — no additional
+  setup is needed inside the container.
+
+> **Why D-Bus forwarding?** `acli` stores auth tokens (both OAuth and API token)
+> in the OS keyring via D-Bus Secret Service, not in config files. The config
+> files in `~/.config/acli/` only contain profile metadata (site, email,
+> auth_type). Without D-Bus access, `acli` cannot retrieve the actual credentials
+> and will report "unauthorized". The `--acli` flag forwards the host's D-Bus
+> session bus so the container can reach the keyring daemon running on the host.
+
+```bash
+# Authenticate on the host first (one-time)
+acli auth login --web                                    # OAuth (browser-based)
+echo "$API_TOKEN" | acli jira auth login --site ... --email ... --token  # API token
+
+# Then launch the sandbox with --acli
+./pi-sandbox --acli
+
+# Combine with other flags
+./pi-sandbox --acli -w       # ACLI + read-write mount
+./pi-sandbox --acli -s       # ACLI + self-modify
+./pi-sandbox --acli -S       # ACLI + SSH
 ```
 
 ## Directory Masking

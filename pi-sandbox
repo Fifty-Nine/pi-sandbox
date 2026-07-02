@@ -17,6 +17,7 @@ TMUX_MODE=false
 TMUX_SOCKET=""
 TMUX_SSH_HOST=""
 SSH_MODE=false
+ACLI_MODE=false
 NO_ASK_USER=false
 NO_SEARXNG=false
 NO_PIIGNORE=false
@@ -36,6 +37,7 @@ while [[ $# -gt 0 ]]; do
         -w|--read-write) RW=true; shift ;;
         -s|--self-modify) SELF_MODIFY=true; shift ;;
         -S|--ssh) SSH_MODE=true; shift ;;
+        --acli) ACLI_MODE=true; shift ;;
         -x|--no-mount) NO_MOUNT=true; shift ;;
         --tmux)
             TMUX_MODE=true
@@ -89,6 +91,8 @@ while [[ $# -gt 0 ]]; do
             echo "                      from /home/<username> (read-write) instead"
             echo "  -S, --ssh           Forward the host SSH agent and mount ~/.ssh read-only so the"
             echo "                      agent can connect to remote hosts via SSH"
+            echo "      --acli          Mount ~/.config/acli and forward D-Bus session bus so the"
+            echo "                      agent can use the Atlassian CLI (acli) with Jira auth"
             echo "  -s, --self-modify   Mount the sandbox source directory read-write so the agent"
             echo "                      can modify the sandbox itself (Dockerfile, entrypoint, etc.)"
             echo "  --tmux [SOCKET]     Mount a tmux socket and enable the pi-tmux-debug extension."
@@ -224,6 +228,39 @@ if $SSH_MODE; then
         --env SSH_AUTH_SOCK=$SSH_MOUNTED_SOCK
         --mount "type=bind,source=$HOME/.ssh,target=$CONTAINER_HOME/.ssh,readonly"
     )
+fi
+
+# ACLI mode: mount ~/.config/acli read-only and forward the D-Bus session bus
+# so acli can retrieve auth tokens from the host's keyring (Secret Service).
+if $ACLI_MODE; then
+    ACLI_CONFIG_DIR="$HOME/.config/acli"
+    if [[ ! -d "$ACLI_CONFIG_DIR" ]]; then
+        echo "Error: --acli requires ~/.config/acli to exist on the host." >&2
+        echo "       Run 'acli auth login' on the host first to create it." >&2
+        exit 1
+    fi
+    DOCKER_ARGS+=(
+        --mount "type=bind,source=$ACLI_CONFIG_DIR,target=$CONTAINER_HOME/.config/acli,readonly"
+    )
+    # Forward D-Bus session bus so acli can reach the host keyring.
+    # acli stores auth tokens (both OAuth and API token) in the OS keyring
+    # via D-Bus Secret Service; the config files only hold metadata.
+    DBUS_SESSION_DIR="/run/user/$(id -u)"
+    if [[ -S "$DBUS_SESSION_DIR/bus" ]]; then
+        # Mount at the same path inside the container so acli finds the
+        # socket at its expected location. With --userns=keep-id the
+        # container UID matches the host, so /run/user/<uid> is correct
+        # on both sides. Also set DBUS_SESSION_BUS_ADDRESS as a fallback
+        # in case the container lacks an XDG runtime directory setup.
+        DOCKER_ARGS+=(
+            --mount "type=bind,source=$DBUS_SESSION_DIR,target=$DBUS_SESSION_DIR"
+            --env "DBUS_SESSION_BUS_ADDRESS=unix:path=$DBUS_SESSION_DIR/bus"
+        )
+    else
+        echo "Warning: D-Bus session bus not found at $DBUS_SESSION_DIR/bus." >&2
+        echo "         acli auth may fail without access to the host keyring." >&2
+        echo "         Ensure you are running in a desktop session (graphical login or systemd --user)." >&2
+    fi
 fi
 
 # Tmux SSH mode: set env var for the tmux tool to proxy over SSH
