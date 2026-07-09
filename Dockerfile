@@ -149,7 +149,9 @@ RUN mkdir -p /home/${SANDBOX_USER}/.pi-sandbox/pi-extensions \
  && ln -s /home/${SANDBOX_USER}/.pi-sandbox/npm-packages/node_modules/pi-ask-user \
          /home/${SANDBOX_USER}/.pi-sandbox/pi-extensions/pi-ask-user \
  && ln -s /home/${SANDBOX_USER}/.pi-sandbox/npm-packages/node_modules/@blazer2k/searxng-suite \
-         /home/${SANDBOX_USER}/.pi-sandbox/pi-extensions/searxng-suite
+         /home/${SANDBOX_USER}/.pi-sandbox/pi-extensions/searxng-suite \
+ && ln -s /home/${SANDBOX_USER}/.pi-sandbox/npm-packages/node_modules/pi-ollama-cloud-provider \
+         /home/${SANDBOX_USER}/.pi-sandbox/pi-extensions/pi-ollama-cloud-provider
 
 # -------------------------------------------------------------------
 # 8b. Install local pi packages

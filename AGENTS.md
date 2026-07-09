@@ -152,9 +152,9 @@ session history, and skills remain accessible and new sessions persist to the ho
 ## Extension Opt-In System
 
 Sandbox extensions are **disabled by default** and must be explicitly enabled
-via `pi-sandbox` flags, except for `pi-ask-user` and `searxng-suite` which are
-enabled by default. This gives users fine-grained control over which
-capabilities the agent has access to.
+via `pi-sandbox` flags, except for `pi-ask-user`, `searxng-suite`, and
+`pi-ollama-cloud-provider` which are enabled by default. This gives users
+fine-grained control over which capabilities the agent has access to.
 
 ### How It Works
 
@@ -180,25 +180,25 @@ appropriate `-e` flags.
 
 | Flag | Extensions enabled | Notes |
 |------|-------------------|-------|
-| *(default)* | `pi-ask-user`, `searxng-suite` | Default extensions are always on unless explicitly disabled |
-| `--tmux [SOCKET]` | `pi-ask-user`, `searxng-suite`, `pi-tmux-debug` | Also mounts tmux socket |
-| `--tmux-ssh HOST` | `pi-ask-user`, `searxng-suite`, `pi-tmux-debug` | Proxies tmux over SSH |
-| `--no-ask-user` | `searxng-suite` | Disables only `pi-ask-user`; other defaults remain |
-| `--no-searxng` | `pi-ask-user` | Disables only `searxng-suite`; other defaults remain |
-| `--no-ask-user --no-searxng` | *(none)* | Disables all default extensions |
+| *(default)* | `pi-ask-user`, `searxng-suite`, `pi-ollama-cloud-provider` | Default extensions are always on unless explicitly disabled |
+| `--tmux [SOCKET]` | `pi-ask-user`, `searxng-suite`, `pi-ollama-cloud-provider`, `pi-tmux-debug` | Also mounts tmux socket |
+| `--tmux-ssh HOST` | `pi-ask-user`, `searxng-suite`, `pi-ollama-cloud-provider`, `pi-tmux-debug` | Proxies tmux over SSH |
+| `--no-ask-user` | `searxng-suite`, `pi-ollama-cloud-provider` | Disables only `pi-ask-user`; other defaults remain |
+| `--no-searxng` | `pi-ask-user`, `pi-ollama-cloud-provider` | Disables only `searxng-suite`; other defaults remain |
+| `--no-ask-user --no-searxng` | `pi-ollama-cloud-provider` | Disables some default extensions |
 
 ### Example Invocations
 
 | `pi-sandbox` command | Actual `pi` command in container |
 |---|---|
-| `pi-sandbox` | `pi -ne -e .../pi-ask-user -e .../searxng-suite` |
-| `pi-sandbox --tmux` | `pi -ne -e .../pi-ask-user -e .../searxng-suite -e .../pi-tmux-debug` |
-| `pi-sandbox --tmux-ssh host -S` | `pi -ne -e .../pi-ask-user -e .../searxng-suite -e .../pi-tmux-debug` |
-| `pi-sandbox --no-ask-user` | `pi -ne -e .../searxng-suite` |
-| `pi-sandbox --no-searxng` | `pi -ne -e .../pi-ask-user` |
-| `pi-sandbox --no-ask-user --no-searxng` | `pi -ne` (no extensions) |
-| `pi-sandbox -- --resume` | `pi -ne -e .../pi-ask-user -e .../searxng-suite --resume` |
-| `pi-sandbox -- -e /my/ext` | `pi -ne -e .../pi-ask-user -e .../searxng-suite -e /my/ext` |
+| `pi-sandbox` | `pi -ne -e .../pi-ask-user -e .../searxng-suite -e .../pi-ollama-cloud-provider` |
+| `pi-sandbox --tmux` | `pi -ne -e .../pi-ask-user -e .../searxng-suite -e .../pi-ollama-cloud-provider -e .../pi-tmux-debug` |
+| `pi-sandbox --tmux-ssh host -S` | `pi -ne -e .../pi-ask-user -e .../searxng-suite -e .../pi-ollama-cloud-provider -e .../pi-tmux-debug` |
+| `pi-sandbox --no-ask-user` | `pi -ne -e .../searxng-suite -e .../pi-ollama-cloud-provider` |
+| `pi-sandbox --no-searxng` | `pi -ne -e .../pi-ask-user -e .../pi-ollama-cloud-provider` |
+| `pi-sandbox --no-ask-user --no-searxng` | `pi -ne -e .../pi-ollama-cloud-provider` |
+| `pi-sandbox -- --resume` | `pi -ne -e .../pi-ask-user -e .../searxng-suite -e .../pi-ollama-cloud-provider --resume` |
+| `pi-sandbox -- -e /my/ext` | `pi -ne -e .../pi-ask-user -e .../searxng-suite -e .../pi-ollama-cloud-provider -e /my/ext` |
 | `pi-sandbox -- bash` | `bash` (not pi) |
 
 Current packages:
@@ -207,6 +207,7 @@ Current packages:
 |---------|---------|------------|
 | `pi-ask-user` | Interactive `ask_user` tool with searchable selection UI | default (disable with `--no-ask-user`) |
 | `searxng-suite` | SearXNG web search & fetch tool for the agent (`@blazer2k/searxng-suite` npm package) | default (disable with `--no-searxng`) |
+| `pi-ollama-cloud-provider` | Ollama cloud model provider for pi (`pi-ollama-cloud-provider` npm package) | default (always on) |
 | `pi-tmux-debug` | Tmux interaction tool (`capture-pane`, `send-keys`, etc.) + `tmux-debug` skill | `--tmux` or `--tmux-ssh` |
 
 ### SearXNG URL

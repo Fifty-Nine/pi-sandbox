@@ -30,7 +30,7 @@ MASK_PATHS=()
 # To add a new extension: add a flag below that appends to
 # ENABLED_EXTENSIONS, and add the flag to --help.
 # -------------------------------------------------------------------
-ENABLED_EXTENSIONS=(pi-ask-user searxng-suite)
+ENABLED_EXTENSIONS=(pi-ask-user searxng-suite pi-ollama-cloud-provider)
 
 while [[ $# -gt 0 ]]; do
     case "$1" in
@@ -82,7 +82,7 @@ while [[ $# -gt 0 ]]; do
             echo ""
             echo "Launch the pi-sandbox Podman container."
             echo ""
-            echo "By default the container runs 'pi -ne -e pi-ask-user -e searxng-suite'. Extensions are"
+            echo "By default the container runs 'pi -ne -e pi-ask-user -e searxng-suite -e pi-ollama-cloud-provider'. Extensions are"
             echo "disabled unless explicitly enabled via the flags below."
             echo ""
             echo "Options:"
@@ -107,6 +107,7 @@ while [[ $# -gt 0 ]]; do
             echo "  --no-piignore      Do not read .piignore even if it exists in the working dir"
             echo "  --no-ask-user      Disable the pi-ask-user extension (enabled by default)"
             echo "  --no-searxng       Disable the searxng-suite extension (enabled by default)"
+            echo "  --no-searxng       Disable the searxng-suite extension (enabled by default)"
             echo "  --                  End of options; remaining args are passed to pi"
             echo "                      (or used as the container command if not a pi flag)"
             echo ""
@@ -128,7 +129,7 @@ while [[ $# -gt 0 ]]; do
             echo "  directories. Glob patterns (* and **) are supported."
             echo ""
             echo "Examples:"
-            echo "  pi-sandbox                      # pi -ne -e pi-ask-user -e searxng-suite"
+            echo "  pi-sandbox                      # pi -ne -e pi-ask-user -e searxng-suite -e pi-ollama-cloud-provider"
             echo "  pi-sandbox --tmux               # pi -ne -e pi-ask-user -e searxng-suite -e pi-tmux-debug"
             echo "  pi-sandbox --no-ask-user        # pi -ne -e searxng-suite"
             echo "  pi-sandbox --mask secrets/     # also mask the secrets/ directory"

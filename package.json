@@ -6,6 +6,7 @@
   "dependencies": {
     "@earendil-works/pi-coding-agent": "~0.80.3",
     "pi-ask-user": "~0.11.2",
-    "@blazer2k/searxng-suite": "~0.2.3"
+    "@blazer2k/searxng-suite": "~0.2.3",
+    "pi-ollama-cloud-provider": "~0.3.0"
   }
 }
