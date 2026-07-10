@@ -40,6 +40,27 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
         openssh-client \
         wget \
         gnupg2 \
+        gcc-arm-none-eabi \
+        # QMK firmware build dependencies
+        avr-libc \
+        avrdude \
+        binutils-arm-none-eabi \
+        binutils-avr \
+        binutils-riscv64-unknown-elf \
+        clang-format \
+        dfu-programmer \
+        dfu-util \
+        diffutils \
+        gcc-avr \
+        gcc-riscv64-unknown-elf \
+        libhidapi-hidraw0 \
+        libnewlib-arm-none-eabi \
+        libusb-dev \
+        picolibc-riscv64-unknown-elf \
+        python3-pip \
+        teensy-loader-cli \
+        unzip \
+        zip \
     && apt-get build-dep -y tmux \
     && rm -rf /var/lib/apt/lists/*
 

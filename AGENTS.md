@@ -31,6 +31,7 @@ daemon, docker-compose stacks, or Docker images.
 - **Base:** `debian:trixie-slim`
 - **Languages:** Python 3.14 (via uv standalone builds), Node.js 22 (via NodeSource)
 - **Tools:** `uv` (fast Python package manager by Astral), `acli` (Atlassian Command Line Interface for Jira)
+- **QMK Build Dependencies:** AVR toolchain (`gcc-avr`, `avr-libc`, `binutils-avr`), ARM toolchain (`gcc-arm-none-eabi`, `binutils-arm-none-eabi`, `libnewlib-arm-none-eabi`), RISC-V toolchain (`gcc-riscv64-unknown-elf`, `binutils-riscv64-unknown-elf`, `picolibc-riscv64-unknown-elf`), flashing tools (`avrdude`, `dfu-programmer`, `dfu-util`, `teensy-loader-cli`), and supporting libraries (`libhidapi-hidraw0`, `libusb-dev`)
 - **User:** Configurable at build time (defaults to the building user's UID/GID/name). Inside the container, the home directory is `/home/<username>/.pi-sandbox`. See **Build** below.
 - **npm packages:** Installed via `package.json` into `/home/<username>/.pi-sandbox/npm-packages/node_modules/` (see **npm Package Management** below)
 - **npm global prefix:** `/home/<username>/.pi-sandbox` (for any `npm install -g` during runtime; used by local packages like `pi-tmux-debug`)
