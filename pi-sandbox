@@ -21,6 +21,8 @@ ACLI_MODE=false
 NO_ASK_USER=false
 NO_SEARXNG=false
 NO_PIIGNORE=false
+NO_PIMOUNTS=false
+PIMOUNTS_RW=false
 MASK_PATHS=()
 
 # -------------------------------------------------------------------
@@ -72,6 +74,10 @@ while [[ $# -gt 0 ]]; do
             ;;
         --no-piignore)
             NO_PIIGNORE=true; shift ;;
+        --no-pimounts)
+            NO_PIMOUNTS=true; shift ;;
+        --pimounts-rw)
+            PIMOUNTS_RW=true; shift ;;
         --no-ask-user)
             NO_ASK_USER=true; shift ;;
         --no-searxng)
@@ -105,6 +111,9 @@ while [[ $# -gt 0 ]]; do
             echo "                      May be specified multiple times. Masked dirs appear empty"
             echo "                      inside the container with no host impact."
             echo "  --no-piignore      Do not read .piignore even if it exists in the working dir"
+            echo "  --no-pimounts      Do not read .pimounts even if it exists in the working dir"
+            echo "  --pimounts-rw      Mount .pimounts read-write (default: read-only, to prevent"
+            echo "                      agent from modifying its own mount config)"
             echo "  --no-ask-user      Disable the pi-ask-user extension (enabled by default)"
             echo "  --no-searxng       Disable the searxng-suite extension (enabled by default)"
             echo "  --no-searxng       Disable the searxng-suite extension (enabled by default)"
@@ -128,12 +137,37 @@ while [[ $# -gt 0 ]]; do
             echo "  Blank lines and lines starting with # are comments. Paths ending with / match"
             echo "  directories. Glob patterns (* and **) are supported."
             echo ""
+            echo "Extra mounts (.pimounts):"
+            echo "  A .pimounts file in the working directory lists additional host paths to mount"
+            echo "  into the container. This is useful for making symlink targets accessible —"
+            echo "  symlinks in the CWD that point to paths outside the CWD will resolve correctly"
+            echo "  if those paths are mounted."
+            echo ""
+            echo "  Format (one entry per line):"
+            echo "    <host-path>[:<mode>]"
+            echo ""
+            echo "  - host-path: absolute path, or relative to the working directory"
+            echo "  - mode: ro (read-only, default) or rw (read-write)"
+            echo ""
+            echo "  The path is mounted at the same absolute path inside the container."
+            echo "  Use --no-pimounts to skip .pimounts processing."
+            echo "  The .pimounts file itself is mounted read-only by default to prevent the"
+            echo "  agent from modifying its own mount configuration. Use --pimounts-rw to"
+            echo "  mount it read-write (e.g., when you want the agent to update .pimounts)."
+            echo "  Agents should write proposed changes to .pimounts.new for your review."
+            echo ""
+            echo "  Example .pimounts:"
+            echo "    /home/user/.steam/steam/steamapps/common/Crusader Kings III/"
+            echo "    /home/user/.steam/steam/userdata/6233966/1158310/remote/save games/:rw"
+            echo ""
             echo "Examples:"
             echo "  pi-sandbox                      # pi -ne -e pi-ask-user -e searxng-suite -e pi-ollama-cloud-provider"
             echo "  pi-sandbox --tmux               # pi -ne -e pi-ask-user -e searxng-suite -e pi-tmux-debug"
             echo "  pi-sandbox --no-ask-user        # pi -ne -e searxng-suite"
             echo "  pi-sandbox --mask secrets/     # also mask the secrets/ directory"
             echo "  pi-sandbox --no-piignore       # skip .piignore even if it exists"
+            echo "  pi-sandbox --no-pimounts       # skip .pimounts even if it exists"
+            echo "  pi-sandbox --pimounts-rw       # mount .pimounts read-write"
             echo "  pi-sandbox -- --resume          # pi -ne -e pi-ask-user -e searxng-suite --resume"
             echo "  pi-sandbox -- bash              # bash (not pi)"
             exit 0
@@ -175,6 +209,92 @@ fi
 DOCKER_ARGS+=(
     -w "$AGENT_PWD"
 )
+
+# -------------------------------------------------------------------
+# .pimounts: additional bind mounts from the working directory
+#
+# A .pimounts file in the working directory can list additional host
+# paths to mount into the container. This is useful for making symlink
+# targets accessible — symlinks in the CWD that point to paths outside
+# the CWD will resolve correctly if those paths are mounted.
+#
+# Format (one entry per line):
+#   <host-path>[:<mode>]
+#
+# - host-path: absolute path, or relative to the working directory
+# - mode: ro (read-only, default) or rw (read-write)
+#
+# The path is mounted at the same absolute path inside the container.
+# Podman auto-creates parent directories for the mount target.
+#
+# Example .pimounts:
+#   /home/user/.steam/steam/steamapps/common/Crusader Kings III/
+#   /home/user/.steam/steam/userdata/6233966/1158310/remote/save games/:rw
+# -------------------------------------------------------------------
+PIMOUNT_PATHS=()
+
+if ! $NO_PIMOUNTS && ! $NO_MOUNT && [[ -f "$PWD/.pimounts" ]]; then
+    while IFS= read -r line || [[ -n "$line" ]]; do
+        # Strip leading/trailing whitespace
+        line="${line## }"
+        line="${line%% }"
+        # Skip empty lines and comments
+        [[ -z "$line" || "$line" =~ ^# ]] && continue
+
+        # Parse mode suffix (default: read-only)
+        mode="ro"
+        path="$line"
+        if [[ "$line" == *:rw ]]; then
+            mode="rw"
+            path="${line%:rw}"
+        elif [[ "$line" == *:ro ]]; then
+            path="${line%:ro}"
+        fi
+
+        # Resolve relative paths against CWD
+        if [[ "$path" != /* ]]; then
+            path="$PWD/$path"
+        fi
+
+        # Normalize path (resolve . and ..)
+        normalized="$(cd "$(dirname "$path")" 2>/dev/null && pwd)/$(basename "$path")" 2>/dev/null || normalized="$path"
+        path="$normalized"
+
+        # Validate source exists
+        if [[ ! -d "$path" ]]; then
+            echo "Warning: .pimounts source '$path' does not exist or is not a directory. Skipping." >&2
+            continue
+        fi
+
+        PIMOUNT_PATHS+=("$path:$mode")
+    done < "$PWD/.pimounts"
+fi
+
+# Add pimount bind mounts
+for pimount in "${PIMOUNT_PATHS[@]}"; do
+    host_path="${pimount%:*}"
+    mode="${pimount##*:}"
+    if [[ "$mode" == "rw" ]]; then
+        DOCKER_ARGS+=(--mount "type=bind,source=$host_path,target=$host_path")
+    else
+        DOCKER_ARGS+=(--mount "type=bind,source=$host_path,target=$host_path,readonly")
+    fi
+done
+
+# -------------------------------------------------------------------
+# .pimounts file protection: overlay the .pimounts file as read-only
+# to prevent a compromised agent from modifying it (which could be used
+# to mount additional host directories). Use --pimounts-rw to opt into
+# read-write access.
+#
+# This works because bind mounts are applied in command-line order.
+# The file-level read-only mount comes after the directory-level CWD
+# mount, so it overrides it for this specific file.
+# -------------------------------------------------------------------
+if ! $PIMOUNTS_RW && ! $NO_MOUNT && [[ -f "$PWD/.pimounts" ]]; then
+    PIMOUNT_CONTAINER_PATH="$AGENT_PWD/.pimounts"
+    DOCKER_ARGS+=(--mount "type=bind,source=$PWD/.pimounts,target=$PIMOUNT_CONTAINER_PATH,readonly")
+fi
 
 # Self-modify: mount the sandbox source directory read-write
 if $SELF_MODIFY; then

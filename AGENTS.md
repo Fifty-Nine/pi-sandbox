@@ -82,6 +82,7 @@ on the host). This means bind-mounted files are always owned by the correct host
 |---|---|---|
 | `$HOME/.pi` | `/home/<username>/.pi` | read-write |
 | `$PWD` | `/home/<username>/<relative>` | read-only (default), skipped with `--no-mount` |
+| Paths from `.pimounts` | Same absolute path as host | read-only (default) or read-write (`:rw`) |
 | `$HOME/.ssh` (if `--ssh`) | `/home/<username>/.ssh` | read-only |
 | SSH agent socket (if `--ssh`) | `/ssh-agent-socket/<basename>` | read-write (bind mount of socket directory) |
 | `$HOME/.config/acli` (if `--acli`) | `/home/<username>/.config/acli` | read-only |
@@ -132,6 +133,9 @@ session history, and skills remain accessible and new sessions persist to the ho
 
 # Disable pi-ask-user (searxng-suite still enabled)
 ./pi-sandbox --no-ask-user
+
+# Skip .pimounts processing
+./pi-sandbox --no-pimounts
 
 # Pass additional pi arguments after --
 ./pi-sandbox -- --resume                  # pi -ne -e pi-ask-user -e searxng-suite --resume
@@ -553,6 +557,115 @@ credentials/
   that resolve to the same path are merged)
 - Masking is skipped when `--no-mount` is used (no CWD mount = nothing to
   mask under)
+
+## Extra Mounts (.pimounts)
+
+The sandbox supports **extra bind mounts** via a `.pimounts` file in the working
+directory. This is useful for making symlink targets accessible inside the
+container — symlinks in the CWD that point to paths outside the CWD will
+resolve correctly if those paths are mounted.
+
+### How It Works
+
+When a `.pimounts` file exists in the working directory, the launch script
+reads it and adds bind mounts for each listed path. The path is mounted at the
+**same absolute path** inside the container — Podman auto-creates parent
+directories for the mount target, so symlinks with absolute targets resolve
+correctly.
+
+For example, if your project has:
+
+```
+/home/user/ck3-data/
+├── game  -> /home/user/.steam/steam/steamapps/common/Crusader Kings III/
+├── saves -> /home/user/.steam/steam/userdata/6233966/1158310/remote/save games/
+└── .pimounts
+```
+
+And `.pimounts` contains:
+
+```
+/home/user/.steam/steam/steamapps/common/Crusader Kings III/
+/home/user/.steam/steam/userdata/6233966/1158310/remote/save games/:rw
+```
+
+Then inside the container, both `/home/user/.steam/...` paths are mounted at
+their original locations, and the symlinks `game` and `saves` resolve correctly.
+
+### `.pimounts` Format
+
+```
+# Comment lines start with #
+/home/user/.steam/steam/steamapps/common/Crusader Kings III/
+/home/user/.steam/steam/userdata/6233966/1158310/remote/save games/:rw
+```
+
+- One entry per line
+- Blank lines and `#` comments are ignored
+- Each entry is a host path, optionally followed by `:ro` (read-only, default)
+  or `:rw` (read-write)
+- Relative paths are resolved against the working directory
+- Only **directories** can be mounted (individual files cannot)
+- The source path must exist on the host; missing paths are skipped with a
+  warning
+
+### Mount Mode
+
+| Suffix | Mode | Description |
+|--------|------|-------------|
+| *(none)* | read-only | Default. The mounted directory is read-only inside the container. |
+| `:ro` | read-only | Explicit read-only (same as default). |
+| `:rw` | read-write | The mounted directory is writable inside the container. |
+
+### Security: Read-Only `.pimounts`
+
+The `.pimounts` file itself is **mounted read-only** inside the container by
+default, even when the CWD is mounted read-write (`-w`). This prevents a
+compromised or misbehaving agent from modifying `.pimounts` to mount additional
+host directories (a form of privilege escalation).
+
+This works by adding a file-level read-only bind mount of `.pimounts` on top
+of the directory-level CWD mount. Since bind mounts are applied in command-line
+order, the file-level overlay overrides the directory mount for that specific
+file.
+
+Use `--pimounts-rw` to opt into read-write access (e.g., when you explicitly
+want the agent to update `.pimounts`). Agents should write proposed changes to
+`.pimounts.new` by default for your review, rather than modifying `.pimounts`
+directly.
+
+### Usage
+
+```bash
+# .pimounts is read automatically if present
+./pi-sandbox
+
+# Skip .pimounts processing
+./pi-sandbox --no-pimounts
+
+# Mount .pimounts read-write (opt-in)
+./pi-sandbox --pimounts-rw
+
+# Combine with read-write CWD mount
+./pi-sandbox -w
+
+# Combine with other flags
+./pi-sandbox -w --no-pimounts
+./pi-sandbox -w --pimounts-rw
+./pi-sandbox -s -w
+```
+
+### Implementation Details
+
+- `.pimounts` is only processed when the CWD is mounted (skipped with
+  `--no-mount`)
+- Each entry becomes a `--mount type=bind,source=<path>,target=<path>[,readonly]`
+  in the container
+- Paths are normalized (`.` and `..` resolved) before mounting
+- Missing source directories produce a warning and are skipped (no hard error)
+- The `--no-pimounts` flag disables `.pimounts` processing entirely
+- The `.pimounts` file is mounted read-only by default (overridden with
+  `--pimounts-rw`) to prevent agent tampering with mount configuration
 
 ## Notes
 
