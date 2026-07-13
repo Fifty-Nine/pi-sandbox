@@ -341,25 +341,46 @@ export default function (pi: ExtensionAPI) {
 				}
 			});
 
+			// Connect supervisor's abort signal (Escape key) to the sub-agent
+			let userAborted = false;
+			const abortListener = () => {
+				userAborted = true;
+				session.abort();
+			};
+			if (signal && !signal.aborted) {
+				signal.addEventListener("abort", abortListener, { once: true });
+			} else if (signal?.aborted) {
+				userAborted = true;
+				session.abort();
+			}
+
 			try {
-				await session.prompt(params.prompt, { signal });
-			} catch (err: unknown) {
+				await session.prompt(params.prompt);
+			} catch {
+				// session.prompt() may throw or resolve on abort — handled by userAborted flag below
+			} finally {
+				unsubscribe();
+				if (signal && !signal.aborted) {
+					signal.removeEventListener("abort", abortListener);
+				}
+			}
+
+			if (userAborted) {
 				return {
 					content: [
 						{
 							type: "text",
-							text: `Sub-agent '${params.agent_id}' encountered an error: ${err instanceof Error ? err.message : String(err)}`,
+							text: `[Sub-agent '${params.agent_id}' aborted by user.]
+${accumulatedText || "(no output yet)"}`,
 						},
 					],
 					details: {
 						agent_id: params.agent_id,
 						turns_total: managed.totalTurns,
 						budget_remaining: budgetRemaining(),
+						aborted: true,
 					},
-					isError: true,
 				};
-			} finally {
-				unsubscribe();
 			}
 
 			// Get the final assistant message content
