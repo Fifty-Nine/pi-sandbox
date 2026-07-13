@@ -183,6 +183,14 @@ RUN npm install -g /home/${SANDBOX_USER}/.pi-sandbox/pkg-src/pi-tmux-debug \
          /home/${SANDBOX_USER}/.pi-sandbox/pi-extensions/pi-tmux-debug
 
 # -------------------------------------------------------------------
+# 8c. Install pi-sub-agent (nested sub-agent support, disabled by default)
+# -------------------------------------------------------------------
+COPY --chown=${SANDBOX_USER}:${SANDBOX_GROUP} packages/pi-sub-agent /home/${SANDBOX_USER}/.pi-sandbox/pkg-src/pi-sub-agent
+RUN npm install -g /home/${SANDBOX_USER}/.pi-sandbox/pkg-src/pi-sub-agent \
+ && ln -s /home/${SANDBOX_USER}/.pi-sandbox/lib/node_modules/pi-sub-agent \
+         /home/${SANDBOX_USER}/.pi-sandbox/pi-extensions/pi-sub-agent
+
+# -------------------------------------------------------------------
 # 9. Copy entrypoint script that constructs pi -ne -e <path> ...
 #     from PI_ENABLED_EXTENSIONS at startup.
 #     Adding a new package = install above + add flag in pi-sandbox.

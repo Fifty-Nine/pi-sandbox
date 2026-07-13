@@ -24,15 +24,20 @@ NO_PIIGNORE=false
 NO_PIMOUNTS=false
 PIMOUNTS_RW=false
 MASK_PATHS=()
+SUB_AGENT=false
 
 # -------------------------------------------------------------------
 # Extension enablement: which pi extensions to load via -e.
 # pi-ask-user and searxng-suite are enabled by default; disable with --no-ask-user / --no-searxng.
 # pi-tmux-debug is enabled by --tmux or --tmux-ssh.
+# pi-sub-agent is enabled by --sub-agent.
 # To add a new extension: add a flag below that appends to
 # ENABLED_EXTENSIONS, and add the flag to --help.
 # -------------------------------------------------------------------
 ENABLED_EXTENSIONS=(pi-ask-user searxng-suite pi-ollama-cloud-provider)
+
+SUB_AGENT_MODEL=""
+SUB_AGENT_TURN_LIMIT=30
 
 while [[ $# -gt 0 ]]; do
     case "$1" in
@@ -82,6 +87,24 @@ while [[ $# -gt 0 ]]; do
             NO_ASK_USER=true; shift ;;
         --no-searxng)
             NO_SEARXNG=true; shift ;;
+        --sub-agent)
+            SUB_AGENT=true
+            ENABLED_EXTENSIONS+=(pi-sub-agent)
+            shift ;;
+        --sub-agent-model)
+            if [[ $# -lt 2 ]]; then
+                echo "Error: --sub-agent-model requires a model name" >&2; exit 1
+            fi
+            SUB_AGENT_MODEL="$2"
+            shift 2
+            ;;
+        --sub-agent-turn-limit)
+            if [[ $# -lt 2 ]]; then
+                echo "Error: --sub-agent-turn-limit requires a number" >&2; exit 1
+            fi
+            SUB_AGENT_TURN_LIMIT="$2"
+            shift 2
+            ;;
         --) shift; break ;;
         -h|--help)
             echo "Usage: $(basename "$0") [OPTIONS] [--] [PI-ARGS...] | [COMMAND...]"
@@ -116,6 +139,9 @@ while [[ $# -gt 0 ]]; do
             echo "                      agent from modifying its own mount config)"
             echo "  --no-ask-user      Disable the pi-ask-user extension (enabled by default)"
             echo "  --no-searxng       Disable the searxng-suite extension (enabled by default)"
+            echo "  --sub-agent        Enable the pi-sub-agent extension for spawning nested agents"
+            echo "  --sub-agent-model NAME  Model for sub-agents (default: same as supervisor)"
+            echo "  --sub-agent-turn-limit N  Max sub-agent turns per supervisor response (default: 30, -1 = unlimited)"
             echo "  --no-searxng       Disable the searxng-suite extension (enabled by default)"
             echo "  --                  End of options; remaining args are passed to pi"
             echo "                      (or used as the container command if not a pi flag)"
@@ -164,6 +190,9 @@ while [[ $# -gt 0 ]]; do
             echo "  pi-sandbox                      # pi -ne -e pi-ask-user -e searxng-suite -e pi-ollama-cloud-provider"
             echo "  pi-sandbox --tmux               # pi -ne -e pi-ask-user -e searxng-suite -e pi-tmux-debug"
             echo "  pi-sandbox --no-ask-user        # pi -ne -e searxng-suite"
+            echo "  pi-sandbox --sub-agent           # pi -ne -e ... -e pi-sub-agent"
+            echo "  pi-sandbox --sub-agent --sub-agent-model claude-haiku-4-5 \"
+            echo "             --sub-agent-turn-limit 50"
             echo "  pi-sandbox --mask secrets/     # also mask the secrets/ directory"
             echo "  pi-sandbox --no-piignore       # skip .piignore even if it exists"
             echo "  pi-sandbox --no-pimounts       # skip .pimounts even if it exists"
@@ -338,6 +367,12 @@ PI_ENABLED_EXTENSIONS=$(IFS=,; echo "${ENABLED_EXTENSIONS[*]}")
 DOCKER_ARGS+=(
     --env PI_ENABLED_EXTENSIONS=$PI_ENABLED_EXTENSIONS
 )
+
+# Sub-agent configuration (only relevant when --sub-agent is active)
+if [[ -n "$SUB_AGENT_MODEL" ]]; then
+    DOCKER_ARGS+=(--env PI_SUB_AGENT_MODEL=$SUB_AGENT_MODEL)
+fi
+DOCKER_ARGS+=(--env PI_SUB_AGENT_TURN_LIMIT=$SUB_AGENT_TURN_LIMIT)
 
 if $SSH_MODE; then
     if [[ -z "${SSH_AUTH_SOCK:-}" ]]; then

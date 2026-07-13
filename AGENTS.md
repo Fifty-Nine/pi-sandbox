@@ -13,6 +13,7 @@ A Podman-based sandbox for running `pi-coding-agent` in an isolated environment.
 | `AGENTS.md` | This file |
 | `skills/self-modify-sandbox/` | Pi skill for sandbox self-modification (loaded when `--self-modify` is active) |
 | `packages/pi-tmux-debug/` | Local pi package providing tmux interaction tool and debugging skill |
+| `packages/pi-sub-agent/` | Local pi package providing nested sub-agent support (disabled by default, enable with `--sub-agent`) |
 
 ## Container Runtime
 
@@ -152,6 +153,15 @@ session history, and skills remain accessible and new sessions persist to the ho
 ./pi-sandbox -S --tmux
 ./pi-sandbox --acli -w
 ./pi-sandbox --acli -s
+
+# Sub-agent mode — enable nested sub-agents
+./pi-sandbox --sub-agent
+./pi-sandbox --sub-agent --sub-agent-model claude-haiku-4-5
+./pi-sandbox --sub-agent --sub-agent-turn-limit 50
+
+# Combine sub-agent with other flags
+./pi-sandbox --sub-agent -w
+./pi-sandbox --sub-agent -S
 ```
 
 ## Extension Opt-In System
@@ -191,6 +201,7 @@ appropriate `-e` flags.
 | `--no-ask-user` | `searxng-suite`, `pi-ollama-cloud-provider` | Disables only `pi-ask-user`; other defaults remain |
 | `--no-searxng` | `pi-ask-user`, `pi-ollama-cloud-provider` | Disables only `searxng-suite`; other defaults remain |
 | `--no-ask-user --no-searxng` | `pi-ollama-cloud-provider` | Disables some default extensions |
+| `--sub-agent` | `pi-ask-user`, `searxng-suite`, `pi-ollama-cloud-provider`, `pi-sub-agent` | Enables nested sub-agent support |
 
 ### Example Invocations
 
@@ -202,6 +213,8 @@ appropriate `-e` flags.
 | `pi-sandbox --no-ask-user` | `pi -ne -e .../searxng-suite -e .../pi-ollama-cloud-provider` |
 | `pi-sandbox --no-searxng` | `pi -ne -e .../pi-ask-user -e .../pi-ollama-cloud-provider` |
 | `pi-sandbox --no-ask-user --no-searxng` | `pi -ne -e .../pi-ollama-cloud-provider` |
+| `pi-sandbox --sub-agent` | `pi -ne -e .../pi-ask-user -e .../searxng-suite -e .../pi-ollama-cloud-provider -e .../pi-sub-agent` |
+| `pi-sandbox --sub-agent --sub-agent-model claude-haiku-4-5` | Same as above with sub-agent model override |
 | `pi-sandbox -- --resume` | `pi -ne -e .../pi-ask-user -e .../searxng-suite -e .../pi-ollama-cloud-provider --resume` |
 | `pi-sandbox -- -e /my/ext` | `pi -ne -e .../pi-ask-user -e .../searxng-suite -e .../pi-ollama-cloud-provider -e /my/ext` |
 | `pi-sandbox -- bash` | `bash` (not pi) |
@@ -214,6 +227,7 @@ Current packages:
 | `searxng-suite` | SearXNG web search & fetch tool for the agent (`@blazer2k/searxng-suite` npm package) | default (disable with `--no-searxng`) |
 | `pi-ollama-cloud-provider` | Ollama cloud model provider for pi (`pi-ollama-cloud-provider` npm package) | default (always on) |
 | `pi-tmux-debug` | Tmux interaction tool (`capture-pane`, `send-keys`, etc.) + `tmux-debug` skill | `--tmux` or `--tmux-ssh` |
+| `pi-sub-agent` | Nested sub-agent support (`spawn_agent`, `prompt_agent`, etc.) | `--sub-agent` |
 
 ### SearXNG URL
 
@@ -386,6 +400,99 @@ SSH errors (like a dropped ControlMaster) are self-healing — the next
 
 **`--tmux` and `--tmux-ssh` are mutually exclusive** — use one or the other.
 `--tmux` for local socket access, `--tmux-ssh` for remote access over SSH.
+
+## Sub-Agent Mode
+
+With `--sub-agent`, the sandbox enables the `pi-sub-agent` extension, which lets the
+supervisor agent spawn persistent nested sub-agents with isolated context windows.
+
+### How It Works
+
+The extension registers four tools:
+
+| Tool | Purpose |
+|------|---------|
+| `spawn_agent` | Create a new sub-agent session with specified tools and system prompt |
+| `prompt_agent` | Send a prompt to an existing sub-agent and wait for its response |
+| `list_agents` | List all active sub-agent sessions |
+| `destroy_agent` | Destroy a sub-agent session and free resources |
+
+Each sub-agent is an in-process pi session created via the pi SDK (`createAgentSession()`).
+Sub-agents use `SessionManager.inMemory()` — their conversations are ephemeral and do
+not persist to disk.
+
+### Context Retention
+
+Unlike one-shot delegation tools, sub-agents **retain context across multiple
+`prompt_agent` calls**. The supervisor can prompt the same agent repeatedly, and
+each call builds on the previous conversation history.
+
+```
+spawn_agent("reviewer", tools=["read","grep"], system_prompt="You review code.")
+  → Agent created, context empty
+
+prompt_agent("reviewer", "Review auth.ts")
+  → Sub-agent reads auth.ts, returns review. Context now has 1 exchange.
+
+prompt_agent("reviewer", "Now review db.ts")
+  → Sub-agent remembers the auth.ts review, reviews db.ts in context.
+
+destroy_agent("reviewer")
+  → Session disposed.
+```
+
+### Tool Isolation
+
+The supervisor specifies which tools the sub-agent can use. The sub-agent **cannot**
+call `spawn_agent`, `prompt_agent`, `list_agents`, or `destroy_agent` — recursive
+nesting is prevented by the extension.
+
+### Streaming Output
+
+The sub-agent's output streams to the TUI in real-time for the user to observe.
+However, only the **final response** is returned to the supervisor's context —
+intermediate thinking and tool calls do not bloat the supervisor's conversation history.
+
+### Turn Budget
+
+To prevent excessive token burn, sub-agents operate under a **per-response budget**
+based on `prompt_agent` calls. Each time the supervisor calls `prompt_agent`, that
+counts as 1 toward the budget — regardless of how many internal turns the sub-agent
+uses. When the budget is exhausted:
+
+1. The `prompt_agent` call is blocked with a budget-exhausted message
+2. Any subsequent `spawn_agent` or `prompt_agent` calls in the same supervisor
+   response are **blocked**
+3. The budget resets when the user sends a new message
+
+This prevents the supervisor from bypassing the limit by spawning new agents or
+re-prompting the same agent, while allowing sub-agents to complete multi-step
+tasks without being interrupted.
+
+### Flags
+
+| Flag | Default | Description |
+|------|---------|-------------|
+| `--sub-agent` | disabled | Enable the pi-sub-agent extension |
+| `--sub-agent-model NAME` | (same as supervisor) | Model for sub-agents, e.g. `claude-haiku-4-5` |
+| `--sub-agent-turn-limit N` | 30 | Max sub-agent turns per supervisor response. `-1` = unlimited |
+
+### Usage
+
+```bash
+# Enable sub-agent support with defaults (same model as supervisor, 30-turn limit)
+./pi-sandbox --sub-agent
+
+# Use a cheaper model for sub-agents with a higher turn limit
+./pi-sandbox --sub-agent --sub-agent-model claude-haiku-4-5 --sub-agent-turn-limit 50
+
+# Unlimited turns (use with caution)
+./pi-sandbox --sub-agent --sub-agent-turn-limit -1
+
+# Combine with other flags
+./pi-sandbox --sub-agent -w
+./pi-sandbox --sub-agent --sub-agent-model claude-sonnet-4-6
+```
 
 ## SSH Mode
 
