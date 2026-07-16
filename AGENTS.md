@@ -89,7 +89,7 @@ on the host). This means bind-mounted files are always owned by the correct host
 | `$HOME/.config/acli` (if `--acli`) | `/home/<username>/.config/acli` | read-only |
 | `/run/user/<uid>` (if `--acli`) | `/run/user/<uid>` | read-write (D-Bus session bus for keyring) |
 | Sandbox source (if `--self-modify`) | `/home/<username>/.sandbox-source` | read-write |
-| Masked directories (`.piignore` / `--mask`) | `/home/<username>/<path>` | read-only bind mount from empty dir |
+| Masked directories (`.piignore` / `--mask`) | `/home/<username>/<path>` | read-only bind mount from temp dir containing `MASKED-BY-PI-SANDBOX.txt` |
 
 `/home/<username>/.pi-sandbox` is **not** mounted from the host. It is baked into the container image and is container-ephemeral: the agent can write to it freely during a session, but changes do not persist across container restarts.
 
@@ -597,7 +597,10 @@ mount namespace is separate from the host — the overlay only exists inside the
 container and has **zero impact on the host filesystem**. No files are copied,
 chmod'd, or modified on the host.
 
-Masked directories appear as empty, read-only directories to the agent.
+Masked directories appear as empty, read-only directories to the agent,
+except for a `MASKED-BY-PI-SANDBOX.txt` marker file that explains why the
+directory is hidden. This makes masking discoverable — an agent listing the
+directory will see the marker instead of a confusingly empty directory.
 
 > **Note:** We use bind mounts (not `--tmpfs`) because Podman processes
 > `--tmpfs` mounts before `--mount type=bind` mounts regardless of command-line
@@ -660,6 +663,9 @@ credentials/
 - Each mask path gets a `--mount type=bind,source=<tmpdir>,target=<path>,readonly`
   in the container, where `<tmpdir>` is a temporary empty directory created by
   the launch script and cleaned up after the container exits
+- The temporary directory contains a `MASKED-BY-PI-SANDBOX.txt` marker file
+  explaining that the directory has been masked, so agents encountering an
+  unexpectedly empty directory can discover the reason
 - Mask paths are deduplicated (multiple `--mask` flags or `.piignore` entries
   that resolve to the same path are merged)
 - Masking is skipped when `--no-mount` is used (no CWD mount = nothing to

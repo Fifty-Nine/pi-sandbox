@@ -131,8 +131,8 @@ while [[ $# -gt 0 ]]; do
             echo "                      Requires -S/--ssh for SSH agent forwarding."
             echo "  --mask PATH        Mask a directory from the agent by overlaying an empty"
             echo "                      read-only mount. PATH is relative to the working directory."
-            echo "                      May be specified multiple times. Masked dirs appear empty"
-            echo "                      inside the container with no host impact."
+            echo "                      May be specified multiple times. Masked dirs contain a"
+            echo "                      MASKED-BY-PI-SANDBOX.txt file explaining the masking."
             echo "  --no-piignore      Do not read .piignore even if it exists in the working dir"
             echo "  --no-pimounts      Do not read .pimounts even if it exists in the working dir"
             echo "  --pimounts-rw      Mount .pimounts read-write (default: read-only, to prevent"
@@ -158,6 +158,9 @@ while [[ $# -gt 0 ]]; do
             echo "  masked from the agent — they appear as empty, read-only directories inside the"
             echo "  container. This has no impact on the host filesystem. Use --no-piignore to"
             echo "  skip this. Additional directories can be masked with --mask."
+            echo ""
+            echo "  Masked directories contain a MASKED-BY-PI-SANDBOX.txt file explaining why"
+            echo "  the directory appears empty, so this behavior is discoverable inside the"
             echo ""
             echo "  The .piignore format is one path per line (relative to working directory)."
             echo "  Blank lines and lines starting with # are comments. Paths ending with / match"
@@ -533,6 +536,17 @@ done
 # overridden by the CWD bind mount. Bind mounts are applied in order.
 if [[ ${#UNIQUE_MASK_PATHS[@]} -gt 0 ]]; then
     MASK_EMPTY_DIR=$(mktemp -d) || { echo "Error: Failed to create temp directory for masking" >&2; exit 1; }
+    # Place a marker file in the temp directory so that masked directories are
+    # not confusingly empty — the agent can see this file and understand why the
+    # directory appears empty.
+    cat > "$MASK_EMPTY_DIR/MASKED-BY-PI-SANDBOX.txt" <<'MARKER'
+This directory has been masked by pi-sandbox.
+Its contents are hidden from the agent inside the container.
+The original contents remain intact on the host filesystem.
+
+This directory was listed in .piignore or specified via --mask.
+See pi-sandbox --help for more information.
+MARKER
     for mask_path in "${UNIQUE_MASK_PATHS[@]}"; do
         DOCKER_ARGS+=("--mount" "type=bind,source=$MASK_EMPTY_DIR,target=$mask_path,readonly")
     done
