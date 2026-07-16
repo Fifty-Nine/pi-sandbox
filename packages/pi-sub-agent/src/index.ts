@@ -19,6 +19,7 @@ import type {
 } from "@earendil-works/pi-coding-agent";
 import {
 	createAgentSession,
+	DefaultResourceLoader,
 	SessionManager,
 } from "@earendil-works/pi-coding-agent";
 import { StringEnum } from "@earendil-works/pi-ai";
@@ -189,21 +190,33 @@ export default function (pi: ExtensionAPI) {
 			// Resolve model
 			const model = resolveModel(ctx.modelRegistry, ctx.model);
 
-			// Create the sub-agent session
+			// Create the sub-agent session with optional system prompt
+			const systemPrompt = params.system_prompt || "";
+
+			// Use DefaultResourceLoader with all discovery disabled
+			// and only the system prompt set
+			const resourceLoader = systemPrompt
+				? new DefaultResourceLoader({
+						cwd: ctx.cwd,
+						agentDir: ctx.cwd,
+						systemPrompt,
+						noExtensions: true,
+						noSkills: true,
+						noPromptTemplates: true,
+						noThemes: true,
+						noContextFiles: true,
+					})
+				: undefined;
+			if (resourceLoader) await resourceLoader.reload();
+
 			const { session } = await createAgentSession({
 				sessionManager: SessionManager.inMemory(),
 				authStorage: ctx.modelRegistry.authStorage,
 				modelRegistry: ctx.modelRegistry,
 				model,
 				tools: allowedTools,
-				// No resource loader — sub-agent gets no extensions/skills by default
+				resourceLoader,
 			});
-
-			// If a system prompt was provided, inject it via before_agent_start
-			const systemPrompt = params.system_prompt || "";
-			if (systemPrompt) {
-				// We'll inject it on the first prompt_agent call instead
-			}
 
 			const managed: ManagedAgent = {
 				session,
@@ -321,7 +334,10 @@ export default function (pi: ExtensionAPI) {
 				};
 			}
 
-			// Subscribe to sub-agent events for streaming (per-message, not per-delta)
+			// Track sub-agent events for observability
+			const toolCalls: Array<{ name: string; args: any; result?: string }> = [];
+
+			// Subscribe to sub-agent events for streaming
 			const unsubscribe = session.subscribe((event) => {
 				// Accumulate text deltas for the final return value
 				if (
@@ -331,13 +347,41 @@ export default function (pi: ExtensionAPI) {
 					accumulatedText += event.assistantMessageEvent.delta;
 				}
 
-				// Update display on complete assistant messages (not per-delta)
+				// Stream tool calls as they happen
+				if (event.type === "tool_execution_start") {
+					toolCalls.push({ name: event.toolName, args: event.args });
+					onUpdate({
+						content: [{ type: "text", text: "\u21d2 " + event.toolName + " " + JSON.stringify(event.args) }],
+						details: { tool_calls: [...toolCalls] },
+					});
+				}
+
+				// Stream tool results
+				if (event.type === "tool_execution_end") {
+					const last = toolCalls[toolCalls.length - 1];
+					if (last) {
+						const resultText = event.result?.content
+							?.filter((c: any) => c.type === "text")
+							.map((c: any) => c.text)
+							.join("\n") || "";
+						last.result = resultText.slice(0, 200);
+					}
+					onUpdate({
+						content: [{ type: "text", text: "\u21d2 " + event.toolName + " done" }],
+						details: { tool_calls: [...toolCalls] },
+					});
+				}
+
+				// Update display on complete assistant messages
 				if (event.type === "message_end" && event.message.role === "assistant") {
 					const text = event.message.content
 						?.filter((c: any) => c.type === "text")
 						.map((c: any) => c.text)
 						.join("\n") || "(generating...)";
-					onUpdate({ content: [{ type: "text", text }], details: {} });
+					onUpdate({
+						content: [{ type: "text", text }],
+						details: { tool_calls: [...toolCalls] },
+					});
 				}
 			});
 
@@ -379,6 +423,7 @@ ${accumulatedText || "(no output yet)"}`,
 						turns_total: managed.totalTurns,
 						budget_remaining: budgetRemaining(),
 						aborted: true,
+						tool_calls: toolCalls,
 					},
 				};
 			}
@@ -398,8 +443,64 @@ ${accumulatedText || "(no output yet)"}`,
 					agent_id: params.agent_id,
 					turns_total: managed.totalTurns,
 					budget_remaining: budgetRemaining(),
+					tool_calls: toolCalls,
 				},
 			};
+		},
+
+		renderCall(args, theme, _context) {
+			const preview = args.prompt
+				? args.prompt.length > 60
+					? args.prompt.slice(0, 60) + "..."
+					: args.prompt
+				: "...";
+			return new Text(
+				theme.fg("toolTitle", theme.bold("prompt_agent ")) +
+					theme.fg("accent", args.agent_id) +
+					theme.fg("dim", " " + preview),
+				0,
+				0,
+			);
+		},
+
+		renderResult(result, { expanded }, theme, _context) {
+			const details = result.details as any;
+			const tc = details?.tool_calls as Array<{ name: string; args: any; result?: string }> | undefined;
+			const isAborted = details?.aborted;
+			const icon = isAborted
+				? theme.fg("warning", "\u26a0")
+				: theme.fg("success", "\u2713");
+
+			let text = icon + " " + theme.fg("toolTitle", theme.bold("prompt_agent ")) + theme.fg("accent", details?.agent_id || "?");
+
+			if (tc && tc.length > 0) {
+				const toShow = expanded ? tc : tc.slice(-5);
+				const skipped = tc.length - toShow.length;
+				if (skipped > 0) text += "\n" + theme.fg("muted", "... " + skipped + " earlier tool call(s)");
+				for (const t of toShow) {
+					const argsStr = JSON.stringify(t.args);
+					const preview = argsStr.length > 50 ? argsStr.slice(0, 50) + "..." : argsStr;
+					text += "\n  " + theme.fg("muted", "\u2192 ") + theme.fg("accent", t.name) + theme.fg("dim", " " + preview);
+					if (expanded && t.result) {
+						text += "\n" + theme.fg("toolOutput", "     " + t.result.slice(0, 300).split("\n").join("\n     "));
+					}
+				}
+			}
+
+			// Show final output
+			const output = result.content[0];
+			if (output?.type === "text" && output.text) {
+				text += "\n" + theme.fg("toolOutput", output.text.slice(0, expanded ? undefined : 200));
+				if (!expanded && output.text.length > 200) text += "\n" + theme.fg("muted", "(Ctrl+O to expand)");
+			}
+
+			// Show usage stats
+			const stats: string[] = [];
+			if (details?.turns_total) stats.push(details.turns_total + " call(s)");
+			if (details?.budget_remaining !== undefined) stats.push(details.budget_remaining + " remaining");
+			if (stats.length > 0) text += "\n" + theme.fg("dim", stats.join(" | "));
+
+			return new Text(text, 0, 0);
 		},
 	});
 
