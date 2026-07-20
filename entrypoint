@@ -46,7 +46,7 @@ fi
 # Symlink everything else back to the real agent dir so pi can read
 # credentials, session history, skills, binaries, etc., and so new
 # sessions written during this run persist to the host filesystem.
-for name in auth.json models.json sessions bin skills prompts themes keybindings.json; do
+for name in auth.json models.json sessions bin skills prompts themes keybindings.json trust.json; do
     src="$HOST_AGENT_DIR/$name"
     dst="$SHADOW_AGENT_DIR/$name"
     # Only symlink if the source exists and the destination isn't already
