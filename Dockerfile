@@ -65,7 +65,19 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && rm -rf /var/lib/apt/lists/*
 
 # -------------------------------------------------------------------
-# 1a. Install Atlassian CLI (acli) from APT repository
+# 1b. Install Docker CLI (docker-ce-cli) from Docker's official APT repository.
+#     The Debian docker.io package ships the daemon but not the docker CLI binary.
+# -------------------------------------------------------------------
+RUN mkdir -p -m 755 /etc/apt/keyrings \
+    && curl -fsSL https://download.docker.com/linux/debian/gpg | gpg --dearmor -o /etc/apt/keyrings/docker.gpg \
+    && chmod go+r /etc/apt/keyrings/docker.gpg \
+    && echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.gpg] https://download.docker.com/linux/debian $(. /etc/os-release && echo $VERSION_CODENAME) stable" > /etc/apt/sources.list.d/docker.list \
+    && apt-get update \
+    && apt-get install -y --no-install-recommends docker-ce-cli docker-compose-plugin \
+    && rm -rf /var/lib/apt/lists/*
+
+# -------------------------------------------------------------------
+# 1c. Install Atlassian CLI (acli) from APT repository
 # -------------------------------------------------------------------
 RUN mkdir -p -m 755 /etc/apt/keyrings \
     && wget -nv -O- https://acli.atlassian.com/gpg/public-key.asc | gpg --dearmor -o /etc/apt/keyrings/acli-archive-keyring.gpg \
@@ -76,7 +88,7 @@ RUN mkdir -p -m 755 /etc/apt/keyrings \
     && rm -rf /var/lib/apt/lists/*
 
 # -------------------------------------------------------------------
-# 1b. Build tmux from source (Debian has 3.5a which is incompatible
+# 1d. Build tmux from source (Debian has 3.5a which is incompatible
 #     with tmux 3.6+ servers due to protocol changes)
 # -------------------------------------------------------------------
 ARG TMUX_VERSION=3.6a

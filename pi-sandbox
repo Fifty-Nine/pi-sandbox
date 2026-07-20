@@ -23,6 +23,7 @@ NO_SEARXNG=false
 NO_PIIGNORE=false
 NO_PIMOUNTS=false
 PIMOUNTS_RW=false
+DOCKER_MODE=false
 MASK_PATHS=()
 SUB_AGENT=false
 
@@ -85,6 +86,8 @@ while [[ $# -gt 0 ]]; do
             PIMOUNTS_RW=true; shift ;;
         --no-ask-user)
             NO_ASK_USER=true; shift ;;
+        --docker)
+            DOCKER_MODE=true; shift ;;
         --no-searxng)
             NO_SEARXNG=true; shift ;;
         --sub-agent)
@@ -138,6 +141,10 @@ while [[ $# -gt 0 ]]; do
             echo "  --pimounts-rw      Mount .pimounts read-write (default: read-only, to prevent"
             echo "                      agent from modifying its own mount config)"
             echo "  --no-ask-user      Disable the pi-ask-user extension (enabled by default)"
+            echo "  --docker           Mount /var/run/docker.sock into the container so the agent"
+            echo "                     can manage Docker containers. Requires the Docker daemon to"
+            echo "                     be running on the host. Security: the agent has full control"
+            echo "                     over the Docker daemon (equivalent to being in the docker group)."
             echo "  --no-searxng       Disable the searxng-suite extension (enabled by default)"
             echo "  --sub-agent        Enable the pi-sub-agent extension for spawning nested agents"
             echo "  --sub-agent-model NAME  Model for sub-agents (default: same as supervisor)"
@@ -196,6 +203,7 @@ while [[ $# -gt 0 ]]; do
             echo "  pi-sandbox --sub-agent           # pi -ne -e ... -e pi-sub-agent"
             echo "  pi-sandbox --sub-agent --sub-agent-model claude-haiku-4-5 \"
             echo "             --sub-agent-turn-limit 50"
+            echo "  pi-sandbox --docker             # mount /var/run/docker.sock for container mgmt"
             echo "  pi-sandbox --mask secrets/     # also mask the secrets/ directory"
             echo "  pi-sandbox --no-piignore       # skip .piignore even if it exists"
             echo "  pi-sandbox --no-pimounts       # skip .pimounts even if it exists"
@@ -441,6 +449,74 @@ if [[ -n "$TMUX_SSH_HOST" ]]; then
     )
 fi
 
+# Docker mode: proxy the Docker socket through a user-owned Unix socket so the
+# container can access it despite user namespace UID/GID remapping.
+#
+# Rootless Podman always uses a user namespace. The Docker socket at
+# /var/run/docker.sock is owned by root:docker (UID 0, GID 994), which are not
+# mapped in the container's user namespace — the socket appears as UID/GID 65534
+# (unmapped) and is inaccessible.
+#
+# We work around this by running socat on the host to create a *new* Unix socket
+# owned by the user (UID/GID that ARE mapped into the container). socat proxies
+# between this user-owned socket and the real Docker socket. The user-owned
+# socket is created in a temp directory with mode 0600, so only the user can
+# access it (no privilege escalation risk).
+#
+# Lifecycle: the temp directory and socat process are created before the
+# container starts and cleaned up after it exits. Each sandbox session gets
+# its own proxy, so multiple sandboxes work independently.
+if $DOCKER_MODE; then
+    # Check that socat is available on the host
+    if ! command -v socat &>/dev/null; then
+        echo "Error: socat is required for --docker mode." >&2
+        echo "       Install it with: sudo apt install socat" >&2
+        exit 1
+    fi
+
+    # Validate the Docker socket exists
+    DOCKER_SOCKET=/var/run/docker.sock
+    if [[ ! -S "$DOCKER_SOCKET" ]]; then
+        echo "Error: Docker socket not found at $DOCKER_SOCKET" >&2
+        echo "       Is the Docker daemon running on the host?" >&2
+        exit 1
+    fi
+
+    # Create a temp directory for the proxy socket
+    DOCKER_PROXY_DIR=$(mktemp -d /tmp/pi-sandbox-docker-XXXXXX) || {
+        echo "Error: Failed to create temp directory for Docker proxy" >&2
+        exit 1
+    }
+    DOCKER_PROXY_SOCK="$DOCKER_PROXY_DIR/docker.sock"
+
+    # Start socat to proxy between the user-owned socket and the real Docker socket.
+    # socat runs as the host user, who is in the docker group, so it can connect
+    # to the real Docker socket. The proxy socket is mode 0600 (user-only access).
+    # stderr is captured to a log file for debugging if socat fails.
+    DOCKER_PROXY_LOG="$DOCKER_PROXY_DIR/socat.log"
+    socat UNIX-LISTEN:"$DOCKER_PROXY_SOCK",mode=0600,unlink-early,fork \
+          UNIX-CONNECT:"$DOCKER_SOCKET" \
+          >/dev/null 2>"$DOCKER_PROXY_LOG" &
+    DOCKER_PROXY_PID=$!
+
+    # Give socat a moment to create the socket, then verify
+    sleep 0.2
+    if [[ ! -S "$DOCKER_PROXY_SOCK" ]]; then
+        echo "Error: Docker proxy socket was not created." >&2
+        echo "       socat log ($DOCKER_PROXY_LOG):" >&2
+        cat "$DOCKER_PROXY_LOG" >&2 2>/dev/null || echo "       (log file not found)" >&2
+        kill "$DOCKER_PROXY_PID" 2>/dev/null || true
+        rm -rf "$DOCKER_PROXY_DIR"
+        exit 1
+    fi
+
+    # Mount the proxy socket directory into the container and set DOCKER_HOST
+    DOCKER_ARGS+=(
+        --mount "type=bind,source=$DOCKER_PROXY_DIR,target=$DOCKER_PROXY_DIR"
+        --env DOCKER_HOST=unix://$DOCKER_PROXY_SOCK
+    )
+fi
+
 if [[ -d "/home/${SANDBOX_USER}/.keys" ]]; then
    DOCKER_ARGS+=(
       --mount "type=bind,source=/home/${SANDBOX_USER}/.keys,target=/home/${SANDBOX_USER}/.keys,readonly"
@@ -554,9 +630,35 @@ MARKER
     # The bind mount is established at container creation time, so removing the
     # source directory after the container exits is safe — the data is no longer
     # needed by the container.
+    HAS_CLEANUP=true
+fi
+
+# Docker proxy cleanup: kill socat and remove the temp directory after the
+# container exits.
+if $DOCKER_MODE; then
+    HAS_CLEANUP=true
+fi
+
+if [[ "${HAS_CLEANUP:-false}" == "true" ]]; then
+    # Define cleanup function and register trap for EXIT, INT, and TERM so
+    # cleanup runs even if the user interrupts the container (Ctrl+C).
+    cleanup() {
+        # Clean up mask temp directory
+        if [[ -n "${MASK_EMPTY_DIR:-}" ]]; then
+            rm -rf "$MASK_EMPTY_DIR"
+        fi
+        # Clean up Docker proxy: kill socat, wait for it, remove temp dir
+        if [[ -n "${DOCKER_PROXY_PID:-}" ]]; then
+            kill "$DOCKER_PROXY_PID" 2>/dev/null || true
+            wait "$DOCKER_PROXY_PID" 2>/dev/null || true
+            rm -rf "${DOCKER_PROXY_DIR:-}"
+        fi
+    }
+    trap cleanup EXIT INT TERM
     podman run -it --rm --userns=keep-id "${DOCKER_ARGS[@]}" "$IMAGE" "$@"
     EXIT_STATUS=$?
-    rm -rf "$MASK_EMPTY_DIR"
+    cleanup
+    trap - EXIT INT TERM
     exit $EXIT_STATUS
 else
     exec podman run -it --rm --userns=keep-id "${DOCKER_ARGS[@]}" "$IMAGE" "$@"

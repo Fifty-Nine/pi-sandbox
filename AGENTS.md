@@ -135,6 +135,9 @@ session history, and skills remain accessible and new sessions persist to the ho
 # Disable pi-ask-user (searxng-suite still enabled)
 ./pi-sandbox --no-ask-user
 
+# Docker mode — mount /var/run/docker.sock for container lifecycle management
+./pi-sandbox --docker
+
 # Skip .pimounts processing
 ./pi-sandbox --no-pimounts
 
@@ -153,6 +156,12 @@ session history, and skills remain accessible and new sessions persist to the ho
 ./pi-sandbox -S --tmux
 ./pi-sandbox --acli -w
 ./pi-sandbox --acli -s
+
+# Docker mode with other flags
+./pi-sandbox --docker -w
+./pi-sandbox --docker -S
+./pi-sandbox --docker --acli
+./pi-sandbox --docker --sub-agent
 
 # Sub-agent mode — enable nested sub-agents
 ./pi-sandbox --sub-agent
@@ -199,6 +208,7 @@ appropriate `-e` flags.
 | `--tmux [SOCKET]` | `pi-ask-user`, `searxng-suite`, `pi-ollama-cloud-provider`, `pi-tmux-debug` | Also mounts tmux socket |
 | `--tmux-ssh HOST` | `pi-ask-user`, `searxng-suite`, `pi-ollama-cloud-provider`, `pi-tmux-debug` | Proxies tmux over SSH |
 | `--no-ask-user` | `searxng-suite`, `pi-ollama-cloud-provider` | Disables only `pi-ask-user`; other defaults remain |
+| `--docker` | *(no extension change)* | Mounts `/var/run/docker.sock` for container lifecycle management |
 | `--no-searxng` | `pi-ask-user`, `pi-ollama-cloud-provider` | Disables only `searxng-suite`; other defaults remain |
 | `--no-ask-user --no-searxng` | `pi-ollama-cloud-provider` | Disables some default extensions |
 | `--sub-agent` | `pi-ask-user`, `searxng-suite`, `pi-ollama-cloud-provider`, `pi-sub-agent` | Enables nested sub-agent support |
@@ -211,6 +221,7 @@ appropriate `-e` flags.
 | `pi-sandbox --tmux` | `pi -ne -e .../pi-ask-user -e .../searxng-suite -e .../pi-ollama-cloud-provider -e .../pi-tmux-debug` |
 | `pi-sandbox --tmux-ssh host -S` | `pi -ne -e .../pi-ask-user -e .../searxng-suite -e .../pi-ollama-cloud-provider -e .../pi-tmux-debug` |
 | `pi-sandbox --no-ask-user` | `pi -ne -e .../searxng-suite -e .../pi-ollama-cloud-provider` |
+| `pi-sandbox --docker` | `pi -ne -e .../pi-ask-user -e .../searxng-suite -e .../pi-ollama-cloud-provider` |
 | `pi-sandbox --no-searxng` | `pi -ne -e .../pi-ask-user -e .../pi-ollama-cloud-provider` |
 | `pi-sandbox --no-ask-user --no-searxng` | `pi -ne -e .../pi-ollama-cloud-provider` |
 | `pi-sandbox --sub-agent` | `pi -ne -e .../pi-ask-user -e .../searxng-suite -e .../pi-ollama-cloud-provider -e .../pi-sub-agent` |
@@ -268,6 +279,95 @@ pi-sandbox --acli
 # Inside the container:
 acli jira workitem search --jql 'project = cmpcpp and status = New' --json
 ```
+
+## Docker Mode
+
+With `--docker`, the sandbox enables the agent to manage Docker containers on the
+host. This is useful for workflows that involve building, running, or inspecting
+containers.
+
+### How It Works
+
+Rootless Podman always uses a user namespace, which remaps UIDs and GIDs. The
+Docker socket at `/var/run/docker.sock` is owned by `root:docker` (UID 0, GID 994)
+on the host — IDs that are not mapped into the container's user namespace. This
+means the socket appears as owned by `nobody:nogroup` (UID/GID 65534) inside the
+container and is inaccessible, even with `--privileged`.
+
+To work around this, the launch script runs `socat` on the **host** to create a
+new Unix socket owned by the user (whose UID/GID **are** mapped into the
+container). `socat` proxies between this user-owned socket and the real Docker
+socket. The proxy socket is created in a temporary directory with mode 0600
+(user-only access), so there is no privilege escalation risk.
+
+```
+Host:  /var/run/docker.sock  (root:docker, mode 660)
+          |
+          |  socat proxy (runs as user, who is in docker group)
+          v
+       /tmp/pi-sandbox-docker-XXXXXX/docker.sock  (user:user, mode 600)
+          |
+          |  bind-mounted into container
+          v
+Container:  DOCKER_HOST=unix:///tmp/pi-sandbox-docker-XXXXXX/docker.sock
+```
+
+Lifecycle: the temp directory and `socat` process are created before the
+container starts and cleaned up after it exits. Each sandbox session gets its
+own proxy, so multiple sandboxes work independently.
+
+### What Gets Installed
+
+The container image includes:
+- **`docker-ce-cli`** — The Docker CLI (`docker` command), installed from Docker's official APT repository
+- **`docker-compose-plugin`** — Docker Compose v2 plugin (`docker compose` subcommand), installed from Docker's official APT repository
+
+All are always present in the image, but the proxy is only set up when `--docker`
+is passed.
+
+### Security Implications
+
+Using `--docker` gives the agent **root-equivalent access** to the host's Docker
+daemon. The agent can:
+- Start, stop, and remove any container
+- Build and push images
+- Access volumes and networks
+- Execute commands inside any container
+
+This is equivalent to being a member of the `docker` group on the host. Only use
+`--docker` in trusted environments where you are comfortable with the agent having
+full control over the Docker daemon.
+
+The proxy socket is created with mode 0600 and is only accessible by the user who
+launched the sandbox. No TCP port is opened, so there is no network-accessible
+attack surface.
+
+### Usage
+
+```bash
+# Enable Docker access
+./pi-sandbox --docker
+
+# Combine with other flags
+./pi-sandbox --docker -w
+./pi-sandbox --docker -S
+./pi-sandbox --docker --acli
+./pi-sandbox --docker --sub-agent
+```
+
+### Prerequisites
+
+- The Docker daemon must be running on the host (`dockerd` or Docker Desktop)
+- The socket must exist at `/var/run/docker.sock` (the default location)
+- `socat` must be installed on the host (`sudo apt install socat`)
+- The user must be a member of the `docker` group on the host
+
+### Example Invocations
+
+| `pi-sandbox` command | Actual `pi` command in container |
+|---|---|
+| `pi-sandbox --docker` | `pi -ne -e .../pi-ask-user -e .../searxng-suite -e .../pi-ollama-cloud-provider` |
+| `pi-sandbox --docker -w` | Same as above with read-write CWD mount |
 
 ### Adding a New Extension
 
