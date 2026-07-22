@@ -1,0 +1,30 @@
+{
+  "name": "pi-send-email",
+  "version": "0.1.0",
+  "description": "Send markdown documents as HTML email via SMTP with TLS — pi extension for pi-sandbox",
+  "type": "module",
+  "keywords": [
+    "pi-package",
+    "pi",
+    "pi-coding-agent",
+    "extension",
+    "email",
+    "smtp",
+    "markdown"
+  ],
+  "license": "MIT",
+  "pi": {
+    "extensions": ["./src/index.ts"]
+  },
+  "files": [
+    "src/index.ts"
+  ],
+  "dependencies": {
+    "nodemailer": "^6.9.16"
+  },
+  "peerDependencies": {
+    "@earendil-works/pi-coding-agent": "*",
+    "@sinclair/typebox": "*",
+    "@earendil-works/pi-ai": "*"
+  }
+}

@@ -108,6 +108,10 @@ while [[ $# -gt 0 ]]; do
             SUB_AGENT_TURN_LIMIT="$2"
             shift 2
             ;;
+        --email)
+            ENABLED_EXTENSIONS+=(pi-send-email)
+            shift
+            ;;
         --) shift; break ;;
         -h|--help)
             echo "Usage: $(basename "$0") [OPTIONS] [--] [PI-ARGS...] | [COMMAND...]"
@@ -149,6 +153,8 @@ while [[ $# -gt 0 ]]; do
             echo "  --sub-agent        Enable the pi-sub-agent extension for spawning nested agents"
             echo "  --sub-agent-model NAME  Model for sub-agents (default: same as supervisor)"
             echo "  --sub-agent-turn-limit N  Max sub-agent turns per supervisor response (default: 30, -1 = unlimited)"
+            echo "  --email            Enable the pi-send-email extension for sending markdown documents"
+            echo "                     as HTML email via SMTP with TLS"
             echo "  --                  End of options; remaining args are passed to pi"
             echo "                      (or used as the container command if not a pi flag)"
             echo ""
@@ -202,6 +208,7 @@ while [[ $# -gt 0 ]]; do
             echo "  pi-sandbox --sub-agent           # pi -ne -e ... -e pi-sub-agent"
             echo "  pi-sandbox --sub-agent --sub-agent-model claude-haiku-4-5 \"
             echo "             --sub-agent-turn-limit 50"
+            echo "  pi-sandbox --email              # pi -ne -e ... -e pi-send-email"
             echo "  pi-sandbox --docker             # mount /var/run/docker.sock for container mgmt"
             echo "  pi-sandbox --mask secrets/     # also mask the secrets/ directory"
             echo "  pi-sandbox --no-piignore       # skip .piignore even if it exists"
@@ -517,35 +524,40 @@ if $DOCKER_MODE; then
 fi
 
 # -------------------------------------------------------------------
-# Ollama host-gateway detection:
-# When ollama.home.trprince.com resolves to a local IP (i.e. we are
-# running on the same host as the ollama service), the sandbox container
+# Host-gateway detection for services running on the host:
+# When a service hostname (e.g. ollama.home.trprince.com,
+# mail.home.trprince.com) resolves to a local IP, the sandbox container
 # may not be able to reach it via DNS due to podman's user-mode
-# networking (slirp4netns / bridged). We set PI_OLLAMA_HOST_GATEWAY=1
-# so the entrypoint can patch /etc/hosts with host.containers.internal's
-# IP — the only reliable way to reach the host from inside the container.
+# networking (slirp4netns / bridged). We set PI_*_HOST_GATEWAY=1 so the
+# entrypoint can patch /etc/hosts with host.containers.internal's IP —
+# the only reliable way to reach the host from inside the container.
 #
-# Detection: resolve ollama.home.trprince.com and check whether any of
-# the host's local interface IPs match. This is a fast, local-only check
-# with zero network probing.
+# Detection: resolve each hostname and check whether any of the host's
+# local interface IPs match. This is a fast, local-only check with zero
+# network probing.
 # -------------------------------------------------------------------
-OLLAMA_PROVIDER_HOSTNAME="ollama.home.trprince.com"
-OLLAMA_IP=$(dig +short "$OLLAMA_PROVIDER_HOSTNAME" 2>/dev/null || \
-            nslookup "$OLLAMA_PROVIDER_HOSTNAME" 2>/dev/null | \
-            awk '/^Address[^:]*: /{print $2; exit}' || \
-            true)
-if [ -n "$OLLAMA_IP" ]; then
-    OLLAMA_IS_LOCAL=false
-    while IFS= read -r iface_ip; do
-        if [ "$iface_ip" = "$OLLAMA_IP" ]; then
-            OLLAMA_IS_LOCAL=true
-            break
-        fi
-    done < <(ip -4 addr show 2>/dev/null | awk '/inet /{print $2}' | cut -d/ -f1 || true)
-    if [ "$OLLAMA_IS_LOCAL" = true ]; then
-        DOCKER_ARGS+=(--env PI_OLLAMA_HOST_GATEWAY=1)
+
+# Helper: check if a hostname resolves to a local IP and set an env var
+check_host_gateway() {
+    local hostname="$1"
+    local env_var="$2"
+    local ip
+    ip=$(dig +short "$hostname" 2>/dev/null || \
+         nslookup "$hostname" 2>/dev/null | \
+         awk '/^Address[^:]*: /{print $2; exit}' || \
+         true)
+    if [ -n "$ip" ]; then
+        while IFS= read -r iface_ip; do
+            if [ "$iface_ip" = "$ip" ]; then
+                DOCKER_ARGS+=(--env "$env_var=1")
+                break
+            fi
+        done < <(ip -4 addr show 2>/dev/null | awk '/inet /{print $2}' | cut -d/ -f1 || true)
     fi
-fi
+}
+
+check_host_gateway "ollama.home.trprince.com" "PI_OLLAMA_HOST_GATEWAY"
+check_host_gateway "mail.home.trprince.com" "PI_MAIL_HOST_GATEWAY"
 
 if [[ -d "/home/${SANDBOX_USER}/.keys" ]]; then
    DOCKER_ARGS+=(

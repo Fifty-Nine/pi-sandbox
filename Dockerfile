@@ -57,6 +57,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
         libnewlib-arm-none-eabi \
         libusb-dev \
         picolibc-riscv64-unknown-elf \
+        pandoc \
         python3-pip \
         teensy-loader-cli \
         unzip \
@@ -201,6 +202,15 @@ COPY --chown=${SANDBOX_USER}:${SANDBOX_GROUP} packages/pi-sub-agent /home/${SAND
 RUN npm install -g /home/${SANDBOX_USER}/.pi-sandbox/pkg-src/pi-sub-agent \
  && ln -s /home/${SANDBOX_USER}/.pi-sandbox/lib/node_modules/pi-sub-agent \
          /home/${SANDBOX_USER}/.pi-sandbox/pi-extensions/pi-sub-agent
+
+# -------------------------------------------------------------------
+# 8d. Install pi-send-email (markdown-to-HTML email sending via SMTP)
+# -------------------------------------------------------------------
+COPY --chown=${SANDBOX_USER}:${SANDBOX_GROUP} packages/pi-send-email /home/${SANDBOX_USER}/.pi-sandbox/pkg-src/pi-send-email
+RUN cd /home/${SANDBOX_USER}/.pi-sandbox/pkg-src/pi-send-email && npm install \
+ && npm install -g /home/${SANDBOX_USER}/.pi-sandbox/pkg-src/pi-send-email \
+ && ln -s /home/${SANDBOX_USER}/.pi-sandbox/lib/node_modules/pi-send-email \
+         /home/${SANDBOX_USER}/.pi-sandbox/pi-extensions/pi-send-email
 
 # -------------------------------------------------------------------
 # 9. Copy entrypoint script that constructs pi -ne -e <path> ...

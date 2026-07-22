@@ -12,6 +12,7 @@ A Podman-based sandbox for running `pi-coding-agent` in an isolated environment.
 | `entrypoint` | Container entrypoint: sets up extension symlinks, skill symlinks, then execs CMD |
 | `AGENTS.md` | This file |
 | `skills/self-modify-sandbox/` | Pi skill for sandbox self-modification (loaded when `--self-modify` is active) |
+| `packages/pi-send-email/` | Pi extension for sending markdown documents as HTML email via SMTP |
 | `packages/pi-tmux-debug/` | Local pi package providing tmux interaction tool and debugging skill |
 | `packages/pi-sub-agent/` | Local pi package providing nested sub-agent support (disabled by default, enable with `--sub-agent`) |
 
@@ -31,7 +32,7 @@ daemon, docker-compose stacks, or Docker images.
 
 - **Base:** `debian:trixie-slim`
 - **Languages:** Python 3.14 (via uv standalone builds), Node.js 22 (via NodeSource)
-- **Tools:** `uv` (fast Python package manager by Astral), `acli` (Atlassian Command Line Interface for Jira)
+- **Tools:** `uv` (fast Python package manager by Astral), `acli` (Atlassian Command Line Interface for Jira), `pandoc` (document conversion, used by the pi-send-email extension)
 - **QMK Build Dependencies:** AVR toolchain (`gcc-avr`, `avr-libc`, `binutils-avr`), ARM toolchain (`gcc-arm-none-eabi`, `binutils-arm-none-eabi`, `libnewlib-arm-none-eabi`), RISC-V toolchain (`gcc-riscv64-unknown-elf`, `binutils-riscv64-unknown-elf`, `picolibc-riscv64-unknown-elf`), flashing tools (`avrdude`, `dfu-programmer`, `dfu-util`, `teensy-loader-cli`), and supporting libraries (`libhidapi-hidraw0`, `libusb-dev`)
 - **User:** Configurable at build time (defaults to the building user's UID/GID/name). Inside the container, the home directory is `/home/<username>/.pi-sandbox`. See **Build** below.
 - **npm packages:** Installed via `package.json` into `/home/<username>/.pi-sandbox/npm-packages/node_modules/` (see **npm Package Management** below)
@@ -212,6 +213,7 @@ appropriate `-e` flags.
 | `--no-searxng` | `pi-ask-user`, `pi-ollama` | Disables only `searxng-suite`; other defaults remain |
 | `--no-ask-user --no-searxng` | `pi-ollama` | Disables some default extensions |
 | `--sub-agent` | `pi-ask-user`, `searxng-suite`, `pi-ollama`, `pi-sub-agent` | Enables nested sub-agent support |
+| `--email` | `pi-ask-user`, `searxng-suite`, `pi-ollama`, `pi-send-email` | Enables markdown-to-HTML email sending |
 
 ### Example Invocations
 
@@ -226,6 +228,7 @@ appropriate `-e` flags.
 | `pi-sandbox --no-ask-user --no-searxng` | `pi -ne -e .../pi-ollama` |
 | `pi-sandbox --sub-agent` | `pi -ne -e .../pi-ask-user -e .../searxng-suite -e .../pi-ollama -e .../pi-sub-agent` |
 | `pi-sandbox --sub-agent --sub-agent-model claude-haiku-4-5` | Same as above with sub-agent model override |
+| `pi-sandbox --email` | `pi -ne -e .../pi-ask-user -e .../searxng-suite -e .../pi-ollama -e .../pi-send-email` |
 | `pi-sandbox -- --resume` | `pi -ne -e .../pi-ask-user -e .../searxng-suite -e .../pi-ollama --resume` |
 | `pi-sandbox -- -e /my/ext` | `pi -ne -e .../pi-ask-user -e .../searxng-suite -e .../pi-ollama -e /my/ext` |
 | `pi-sandbox -- bash` | `bash` (not pi) |
@@ -239,6 +242,51 @@ Current packages:
 | `pi-ollama` | Ollama provider (local + cloud) for pi (`@0xkobold/pi-ollama` npm package) | default (always on) |
 | `pi-tmux-debug` | Tmux interaction tool (`capture-pane`, `send-keys`, etc.) + `tmux-debug` skill | `--tmux` or `--tmux-ssh` |
 | `pi-sub-agent` | Nested sub-agent support (`spawn_agent`, `prompt_agent`, etc.) | `--sub-agent` |
+| `pi-send-email` | Send markdown documents as HTML email via SMTP with TLS (`send_markdown_email` tool) | `--email` |
+
+### Send Markdown Email
+
+The sandbox includes the `pi-send-email` extension, which registers a
+`send_markdown_email` tool callable by the agent. It uses `pandoc` (installed
+system-wide) for markdown-to-HTML conversion and `nodemailer` for SMTP with
+STARTTLS.
+
+**Enable with:** `--email` flag
+
+**SMTP relay:** `mail.home.trprince.com:465` (SMTPS / implicit TLS)
+
+**Credentials:** Stored in `~/.pi/agent/auth.json` under the `"smtp"` key:
+
+```json
+{
+  "smtp": {
+    "host": "mail.home.trprince.com",
+    "port": 465,
+    "username": "notifications",
+    "password": "your-password",
+    "from": "notifications@home.trprince.com"
+  }
+}
+```
+
+The `from` field is optional; if omitted, the SMTP username is used as the
+sender address (which may not be a valid email).
+}
+```
+
+**Tool parameters:**
+
+| Parameter | Required | Description |
+|-----------|----------|-------------|
+| `to` | Yes | Recipient email address |
+| `subject` | Yes | Email subject line |
+| `file` | Yes | Path to the markdown file to send |
+| `cc` | No | CC recipient email address |
+| `from` | No | From address (defaults to SMTP username) |
+
+**Host-gateway handling:** If `mail.home.trprince.com` resolves to a local IP,
+the launch script automatically sets `PI_MAIL_HOST_GATEWAY=1`, and the entrypoint
+patches `/etc/hosts` to map the hostname to `host.containers.internal`.
 
 ### SearXNG URL
 

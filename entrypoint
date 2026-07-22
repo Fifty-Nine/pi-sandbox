@@ -130,23 +130,32 @@ if [ -n "${PI_SEARXNG_URL:-}" ]; then
 fi
 
 # ---------------------------------------------------------------------------
-# Ollama host-gateway workaround:
+# Ollama + Mail host-gateway workaround:
 #
 # When running inside a podman container on the same host as
-# ollama.home.trprince.com, DNS may resolve to the container's own IP
-# (due to bridged networking) or to an unreachable address. The host IS
-# reachable via host.containers.internal, so we add a hosts entry mapping
-# the ollama hostname to that IP.
+# ollama.home.trprince.com or mail.home.trprince.com, DNS may resolve to
+# the container's own IP (due to bridged networking) or to an unreachable
+# address. The host IS reachable via host.containers.internal, so we add
+# hosts entries mapping these hostnames to that IP.
 #
 # PI_OLLAMA_HOST_GATEWAY is set by the pi-sandbox launch script when it
 # detects that ollama.home.trprince.com resolves to a local IP on the host.
+# PI_MAIL_HOST_GATEWAY is set similarly for mail.home.trprince.com.
 # ---------------------------------------------------------------------------
-if [ -n "${PI_OLLAMA_HOST_GATEWAY:-}" ]; then
+if [ -n "${PI_OLLAMA_HOST_GATEWAY:-}" ] || [ -n "${PI_MAIL_HOST_GATEWAY:-}" ]; then
     HOST_IP=$(getent hosts host.containers.internal | awk '{print $1}')
     if [ -n "$HOST_IP" ]; then
+        HOSTS_ENTRIES=""
+        if [ -n "${PI_OLLAMA_HOST_GATEWAY:-}" ]; then
+            HOSTS_ENTRIES="$HOST_IP ollama.home.trprince.com"
+        fi
+        if [ -n "${PI_MAIL_HOST_GATEWAY:-}" ]; then
+            if [ -n "$HOSTS_ENTRIES" ]; then HOSTS_ENTRIES="$HOSTS_ENTRIES\n"; fi
+            HOSTS_ENTRIES="${HOSTS_ENTRIES}$HOST_IP mail.home.trprince.com"
+        fi
         # Passwordless sudo is configured for the sandbox user
-        sudo sh -c "echo '$HOST_IP ollama.home.trprince.com' >> /etc/hosts" 2>/dev/null || \
-            echo "Warning: failed to add hosts entry for ollama.home.trprince.com" >&2
+        echo -e "$HOSTS_ENTRIES" | sudo tee -a /etc/hosts >/dev/null 2>/dev/null || \
+            echo "Warning: failed to add hosts entries" >&2
     fi
 fi
 
