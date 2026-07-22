@@ -177,7 +177,7 @@ session history, and skills remain accessible and new sessions persist to the ho
 
 Sandbox extensions are **disabled by default** and must be explicitly enabled
 via `pi-sandbox` flags, except for `pi-ask-user`, `searxng-suite`, and
-`pi-ollama-cloud-provider` which are enabled by default. This gives users
+`pi-ollama` which are enabled by default. This gives users
 fine-grained control over which capabilities the agent has access to.
 
 ### How It Works
@@ -204,30 +204,30 @@ appropriate `-e` flags.
 
 | Flag | Extensions enabled | Notes |
 |------|-------------------|-------|
-| *(default)* | `pi-ask-user`, `searxng-suite`, `pi-ollama-cloud-provider` | Default extensions are always on unless explicitly disabled |
-| `--tmux [SOCKET]` | `pi-ask-user`, `searxng-suite`, `pi-ollama-cloud-provider`, `pi-tmux-debug` | Also mounts tmux socket |
-| `--tmux-ssh HOST` | `pi-ask-user`, `searxng-suite`, `pi-ollama-cloud-provider`, `pi-tmux-debug` | Proxies tmux over SSH |
-| `--no-ask-user` | `searxng-suite`, `pi-ollama-cloud-provider` | Disables only `pi-ask-user`; other defaults remain |
+| *(default)* | `pi-ask-user`, `searxng-suite`, `pi-ollama` | Default extensions are always on unless explicitly disabled |
+| `--tmux [SOCKET]` | `pi-ask-user`, `searxng-suite`, `pi-ollama`, `pi-tmux-debug` | Also mounts tmux socket |
+| `--tmux-ssh HOST` | `pi-ask-user`, `searxng-suite`, `pi-ollama`, `pi-tmux-debug` | Proxies tmux over SSH |
+| `--no-ask-user` | `searxng-suite`, `pi-ollama` | Disables only `pi-ask-user`; other defaults remain |
 | `--docker` | *(no extension change)* | Mounts `/var/run/docker.sock` for container lifecycle management |
-| `--no-searxng` | `pi-ask-user`, `pi-ollama-cloud-provider` | Disables only `searxng-suite`; other defaults remain |
-| `--no-ask-user --no-searxng` | `pi-ollama-cloud-provider` | Disables some default extensions |
-| `--sub-agent` | `pi-ask-user`, `searxng-suite`, `pi-ollama-cloud-provider`, `pi-sub-agent` | Enables nested sub-agent support |
+| `--no-searxng` | `pi-ask-user`, `pi-ollama` | Disables only `searxng-suite`; other defaults remain |
+| `--no-ask-user --no-searxng` | `pi-ollama` | Disables some default extensions |
+| `--sub-agent` | `pi-ask-user`, `searxng-suite`, `pi-ollama`, `pi-sub-agent` | Enables nested sub-agent support |
 
 ### Example Invocations
 
 | `pi-sandbox` command | Actual `pi` command in container |
 |---|---|
-| `pi-sandbox` | `pi -ne -e .../pi-ask-user -e .../searxng-suite -e .../pi-ollama-cloud-provider` |
-| `pi-sandbox --tmux` | `pi -ne -e .../pi-ask-user -e .../searxng-suite -e .../pi-ollama-cloud-provider -e .../pi-tmux-debug` |
-| `pi-sandbox --tmux-ssh host -S` | `pi -ne -e .../pi-ask-user -e .../searxng-suite -e .../pi-ollama-cloud-provider -e .../pi-tmux-debug` |
-| `pi-sandbox --no-ask-user` | `pi -ne -e .../searxng-suite -e .../pi-ollama-cloud-provider` |
-| `pi-sandbox --docker` | `pi -ne -e .../pi-ask-user -e .../searxng-suite -e .../pi-ollama-cloud-provider` |
-| `pi-sandbox --no-searxng` | `pi -ne -e .../pi-ask-user -e .../pi-ollama-cloud-provider` |
-| `pi-sandbox --no-ask-user --no-searxng` | `pi -ne -e .../pi-ollama-cloud-provider` |
-| `pi-sandbox --sub-agent` | `pi -ne -e .../pi-ask-user -e .../searxng-suite -e .../pi-ollama-cloud-provider -e .../pi-sub-agent` |
+| `pi-sandbox` | `pi -ne -e .../pi-ask-user -e .../searxng-suite -e .../pi-ollama` |
+| `pi-sandbox --tmux` | `pi -ne -e .../pi-ask-user -e .../searxng-suite -e .../pi-ollama -e .../pi-tmux-debug` |
+| `pi-sandbox --tmux-ssh host -S` | `pi -ne -e .../pi-ask-user -e .../searxng-suite -e .../pi-ollama -e .../pi-tmux-debug` |
+| `pi-sandbox --no-ask-user` | `pi -ne -e .../searxng-suite -e .../pi-ollama` |
+| `pi-sandbox --docker` | `pi -ne -e .../pi-ask-user -e .../searxng-suite -e .../pi-ollama` |
+| `pi-sandbox --no-searxng` | `pi -ne -e .../pi-ask-user -e .../pi-ollama` |
+| `pi-sandbox --no-ask-user --no-searxng` | `pi -ne -e .../pi-ollama` |
+| `pi-sandbox --sub-agent` | `pi -ne -e .../pi-ask-user -e .../searxng-suite -e .../pi-ollama -e .../pi-sub-agent` |
 | `pi-sandbox --sub-agent --sub-agent-model claude-haiku-4-5` | Same as above with sub-agent model override |
-| `pi-sandbox -- --resume` | `pi -ne -e .../pi-ask-user -e .../searxng-suite -e .../pi-ollama-cloud-provider --resume` |
-| `pi-sandbox -- -e /my/ext` | `pi -ne -e .../pi-ask-user -e .../searxng-suite -e .../pi-ollama-cloud-provider -e /my/ext` |
+| `pi-sandbox -- --resume` | `pi -ne -e .../pi-ask-user -e .../searxng-suite -e .../pi-ollama --resume` |
+| `pi-sandbox -- -e /my/ext` | `pi -ne -e .../pi-ask-user -e .../searxng-suite -e .../pi-ollama -e /my/ext` |
 | `pi-sandbox -- bash` | `bash` (not pi) |
 
 Current packages:
@@ -236,7 +236,7 @@ Current packages:
 |---------|---------|------------|
 | `pi-ask-user` | Interactive `ask_user` tool with searchable selection UI | default (disable with `--no-ask-user`) |
 | `searxng-suite` | SearXNG web search & fetch tool for the agent (`@blazer2k/searxng-suite` npm package) | default (disable with `--no-searxng`) |
-| `pi-ollama-cloud-provider` | Ollama cloud model provider for pi (`pi-ollama-cloud-provider` npm package) | default (always on) |
+| `pi-ollama` | Ollama provider (local + cloud) for pi (`@0xkobold/pi-ollama` npm package) | default (always on) |
 | `pi-tmux-debug` | Tmux interaction tool (`capture-pane`, `send-keys`, etc.) + `tmux-debug` skill | `--tmux` or `--tmux-ssh` |
 | `pi-sub-agent` | Nested sub-agent support (`spawn_agent`, `prompt_agent`, etc.) | `--sub-agent` |
 
@@ -366,8 +366,7 @@ attack surface.
 
 | `pi-sandbox` command | Actual `pi` command in container |
 |---|---|
-| `pi-sandbox --docker` | `pi -ne -e .../pi-ask-user -e .../searxng-suite -e .../pi-ollama-cloud-provider` |
-| `pi-sandbox --docker -w` | Same as above with read-write CWD mount |
+| `pi-sandbox --docker` | `pi -ne -e .../pi-ask-user -e .../searxng-suite -e .../pi-ollama` |
 
 ### Adding a New Extension
 

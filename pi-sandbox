@@ -35,7 +35,7 @@ SUB_AGENT=false
 # To add a new extension: add a flag below that appends to
 # ENABLED_EXTENSIONS, and add the flag to --help.
 # -------------------------------------------------------------------
-ENABLED_EXTENSIONS=(pi-ask-user searxng-suite pi-ollama-cloud-provider)
+ENABLED_EXTENSIONS=(pi-ask-user searxng-suite pi-ollama)
 
 SUB_AGENT_MODEL=""
 SUB_AGENT_TURN_LIMIT=30
@@ -114,7 +114,7 @@ while [[ $# -gt 0 ]]; do
             echo ""
             echo "Launch the pi-sandbox Podman container."
             echo ""
-            echo "By default the container runs 'pi -ne -e pi-ask-user -e searxng-suite -e pi-ollama-cloud-provider'. Extensions are"
+            echo "By default the container runs 'pi -ne -e pi-ask-user -e searxng-suite -e pi-ollama'. Extensions are"
             echo "disabled unless explicitly enabled via the flags below."
             echo ""
             echo "Options:"
@@ -149,7 +149,6 @@ while [[ $# -gt 0 ]]; do
             echo "  --sub-agent        Enable the pi-sub-agent extension for spawning nested agents"
             echo "  --sub-agent-model NAME  Model for sub-agents (default: same as supervisor)"
             echo "  --sub-agent-turn-limit N  Max sub-agent turns per supervisor response (default: 30, -1 = unlimited)"
-            echo "  --no-searxng       Disable the searxng-suite extension (enabled by default)"
             echo "  --                  End of options; remaining args are passed to pi"
             echo "                      (or used as the container command if not a pi flag)"
             echo ""
@@ -197,7 +196,7 @@ while [[ $# -gt 0 ]]; do
             echo "    /home/user/.steam/steam/userdata/6233966/1158310/remote/save games/:rw"
             echo ""
             echo "Examples:"
-            echo "  pi-sandbox                      # pi -ne -e pi-ask-user -e searxng-suite -e pi-ollama-cloud-provider"
+            echo "  pi-sandbox                      # pi -ne -e pi-ask-user -e searxng-suite -e pi-ollama"
             echo "  pi-sandbox --tmux               # pi -ne -e pi-ask-user -e searxng-suite -e pi-tmux-debug"
             echo "  pi-sandbox --no-ask-user        # pi -ne -e searxng-suite"
             echo "  pi-sandbox --sub-agent           # pi -ne -e ... -e pi-sub-agent"
@@ -515,6 +514,37 @@ if $DOCKER_MODE; then
         --mount "type=bind,source=$DOCKER_PROXY_DIR,target=$DOCKER_PROXY_DIR"
         --env DOCKER_HOST=unix://$DOCKER_PROXY_SOCK
     )
+fi
+
+# -------------------------------------------------------------------
+# Ollama host-gateway detection:
+# When ollama.home.trprince.com resolves to a local IP (i.e. we are
+# running on the same host as the ollama service), the sandbox container
+# may not be able to reach it via DNS due to podman's user-mode
+# networking (slirp4netns / bridged). We set PI_OLLAMA_HOST_GATEWAY=1
+# so the entrypoint can patch /etc/hosts with host.containers.internal's
+# IP — the only reliable way to reach the host from inside the container.
+#
+# Detection: resolve ollama.home.trprince.com and check whether any of
+# the host's local interface IPs match. This is a fast, local-only check
+# with zero network probing.
+# -------------------------------------------------------------------
+OLLAMA_PROVIDER_HOSTNAME="ollama.home.trprince.com"
+OLLAMA_IP=$(dig +short "$OLLAMA_PROVIDER_HOSTNAME" 2>/dev/null || \
+            nslookup "$OLLAMA_PROVIDER_HOSTNAME" 2>/dev/null | \
+            awk '/^Address[^:]*: /{print $2; exit}' || \
+            true)
+if [ -n "$OLLAMA_IP" ]; then
+    OLLAMA_IS_LOCAL=false
+    while IFS= read -r iface_ip; do
+        if [ "$iface_ip" = "$OLLAMA_IP" ]; then
+            OLLAMA_IS_LOCAL=true
+            break
+        fi
+    done < <(ip -4 addr show 2>/dev/null | awk '/inet /{print $2}' | cut -d/ -f1 || true)
+    if [ "$OLLAMA_IS_LOCAL" = true ]; then
+        DOCKER_ARGS+=(--env PI_OLLAMA_HOST_GATEWAY=1)
+    fi
 fi
 
 if [[ -d "/home/${SANDBOX_USER}/.keys" ]]; then

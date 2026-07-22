@@ -126,6 +126,27 @@ if [ -n "${PI_SEARXNG_URL:-}" ]; then
     export SEARXNG_URL="$PI_SEARXNG_URL"
 fi
 
+# ---------------------------------------------------------------------------
+# Ollama host-gateway workaround:
+#
+# When running inside a podman container on the same host as
+# ollama.home.trprince.com, DNS may resolve to the container's own IP
+# (due to bridged networking) or to an unreachable address. The host IS
+# reachable via host.containers.internal, so we add a hosts entry mapping
+# the ollama hostname to that IP.
+#
+# PI_OLLAMA_HOST_GATEWAY is set by the pi-sandbox launch script when it
+# detects that ollama.home.trprince.com resolves to a local IP on the host.
+# ---------------------------------------------------------------------------
+if [ -n "${PI_OLLAMA_HOST_GATEWAY:-}" ]; then
+    HOST_IP=$(getent hosts host.containers.internal | awk '{print $1}')
+    if [ -n "$HOST_IP" ]; then
+        # Passwordless sudo is configured for the sandbox user
+        sudo sh -c "echo '$HOST_IP ollama.home.trprince.com' >> /etc/hosts" 2>/dev/null || \
+            echo "Warning: failed to add hosts entry for ollama.home.trprince.com" >&2
+    fi
+fi
+
 # Decide whether to inject extension flags into pi, or exec as-is.
 # - No args (default CMD "pi")        → inject
 # - First arg is "pi"                 → inject, shift past "pi"
