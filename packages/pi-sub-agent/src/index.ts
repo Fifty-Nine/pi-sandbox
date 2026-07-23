@@ -211,8 +211,7 @@ export default function (pi: ExtensionAPI) {
 
 			const { session } = await createAgentSession({
 				sessionManager: SessionManager.inMemory(),
-				authStorage: ctx.modelRegistry.authStorage,
-				modelRegistry: ctx.modelRegistry,
+				modelRuntime: ctx.modelRegistry.runtime,
 				model,
 				tools: allowedTools,
 				resourceLoader,
@@ -400,8 +399,20 @@ export default function (pi: ExtensionAPI) {
 
 			try {
 				await session.prompt(params.prompt);
-			} catch {
-				// session.prompt() may throw or resolve on abort — handled by userAborted flag below
+			} catch (error) {
+				// Pre-flight errors (no model, no auth, etc.) are thrown before the agent starts.
+				// Abort is handled internally by the agent and does NOT reach this catch block.
+				const message = error instanceof Error ? error.message : String(error);
+				return {
+					content: [{ type: "text", text: `[Sub-agent error: ${message}]` }],
+					details: {
+						agent_id: params.agent_id,
+						turns_total: managed.totalTurns,
+						budget_remaining: budgetRemaining(),
+						error: message,
+					},
+					isError: true,
+				};
 			} finally {
 				unsubscribe();
 				if (signal && !signal.aborted) {
