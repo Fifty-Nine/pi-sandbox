@@ -20,6 +20,7 @@ SSH_MODE=false
 ACLI_MODE=false
 NO_ASK_USER=false
 NO_SEARXNG=false
+NO_GRILL_ME=false
 NO_PIIGNORE=false
 NO_PIMOUNTS=false
 PIMOUNTS_RW=false
@@ -35,7 +36,7 @@ SUB_AGENT=false
 # To add a new extension: add a flag below that appends to
 # ENABLED_EXTENSIONS, and add the flag to --help.
 # -------------------------------------------------------------------
-ENABLED_EXTENSIONS=(pi-ask-user searxng-suite pi-ollama)
+ENABLED_EXTENSIONS=(pi-ask-user searxng-suite pi-ollama pi-grill-me)
 
 SUB_AGENT_MODEL=""
 SUB_AGENT_TURN_LIMIT=30
@@ -86,6 +87,8 @@ while [[ $# -gt 0 ]]; do
             PIMOUNTS_RW=true; shift ;;
         --no-ask-user)
             NO_ASK_USER=true; shift ;;
+        --no-grill-me)
+            NO_GRILL_ME=true; shift ;;
         --docker)
             DOCKER_MODE=true; shift ;;
         --no-searxng)
@@ -118,7 +121,7 @@ while [[ $# -gt 0 ]]; do
             echo ""
             echo "Launch the pi-sandbox Podman container."
             echo ""
-            echo "By default the container runs 'pi -ne -e pi-ask-user -e searxng-suite -e pi-ollama'. Extensions are"
+            echo "By default the container runs 'pi -ne -e pi-ask-user -e searxng-suite -e pi-ollama -e pi-grill-me'. Extensions are"
             echo "disabled unless explicitly enabled via the flags below."
             echo ""
             echo "Options:"
@@ -150,6 +153,7 @@ while [[ $# -gt 0 ]]; do
             echo "                     be running on the host. Security: the agent has full control"
             echo "                     over the Docker daemon (equivalent to being in the docker group)."
             echo "  --no-searxng       Disable the searxng-suite extension (enabled by default)"
+            echo "  --no-grill-me      Disable the pi-grill-me extension (enabled by default)"
             echo "  --sub-agent        Enable the pi-sub-agent extension for spawning nested agents"
             echo "  --sub-agent-model NAME  Model for sub-agents (default: same as supervisor)"
             echo "  --sub-agent-turn-limit N  Max sub-agent turns per supervisor response (default: 30, -1 = unlimited)"
@@ -202,7 +206,7 @@ while [[ $# -gt 0 ]]; do
             echo "    /home/user/.steam/steam/userdata/6233966/1158310/remote/save games/:rw"
             echo ""
             echo "Examples:"
-            echo "  pi-sandbox                      # pi -ne -e pi-ask-user -e searxng-suite -e pi-ollama"
+            echo "  pi-sandbox                      # pi -ne -e pi-ask-user -e searxng-suite -e pi-ollama -e pi-grill-me"
             echo "  pi-sandbox --tmux               # pi -ne -e pi-ask-user -e searxng-suite -e pi-tmux-debug"
             echo "  pi-sandbox --no-ask-user        # pi -ne -e searxng-suite"
             echo "  pi-sandbox --sub-agent           # pi -ne -e ... -e pi-sub-agent"
@@ -369,8 +373,8 @@ if $TMUX_MODE; then
 fi
 
 # Build PI_ENABLED_EXTENSIONS from the accumulated list.
-# --no-ask-user / --no-searxng remove individual defaults.
-for REMOVE_EXT in $([[ "$NO_ASK_USER" == true ]] && echo pi-ask-user) $([[ "$NO_SEARXNG" == true ]] && echo searxng-suite); do
+# --no-ask-user / --no-searxng / --no-grill-me remove individual defaults.
+for REMOVE_EXT in $([[ "$NO_ASK_USER" == true ]] && echo pi-ask-user) $([[ "$NO_SEARXNG" == true ]] && echo searxng-suite) $([[ "$NO_GRILL_ME" == true ]] && echo pi-grill-me); do
     FILTERED=()
     for ext in "${ENABLED_EXTENSIONS[@]}"; do
         if [ "$ext" != "$REMOVE_EXT" ]; then
